@@ -7865,7 +7865,7 @@ function renderDiaryWeekGrid(){
     </div>`;
   }
 
-  h+='<div class="diary-grid">';
+  h+='<div class="diary-grid" style="position:relative">';
 
   days.forEach(d=>{
     const dateStr=isoDateOnly(d);
@@ -7879,6 +7879,34 @@ function renderDiaryWeekGrid(){
       </div>
     </div>`;
   });
+
+  // Multi-day jobs — render as spanning bars across day columns.
+  // A job is multi-day when pickup_at falls on a later date than booked_at.
+  // The bar sits absolutely positioned inside .diary-grid, spanning from the
+  // booked column to the pickup column. These jobs are excluded from the
+  // regular diaryDayBodyContentHtml below so they only appear once.
+  jobs.filter(j=>j.booked_at&&j.pickup_at&&j.pickup_at.slice(0,10)>j.booked_at.slice(0,10)&&jobMatchesTagFilter(j))
+    .forEach(j=>{
+      const bd=j.booked_at.slice(0,10), pd=j.pickup_at.slice(0,10);
+      const startIdx=days.findIndex(d=>isoDateOnly(d)===bd);
+      const endIdx=days.findIndex(d=>isoDateOnly(d)===pd);
+      if(startIdx===-1)return;
+      const spanCols=(endIdx===-1?6:Math.max(endIdx,startIdx))-startIdx+1;
+      const pctPerCol=100/7;
+      const left=startIdx*pctPerCol, w=spanCols*pctPerCol;
+      const contact=j.customer?.mobile||j.customer?.phone||'';
+      const vehDesc=j.vehicle?([j.vehicle.make,j.vehicle.model].filter(Boolean).join(' ')+(j.vehicle.rego?' ('+j.vehicle.rego+')':'')):'';
+      const tags=jobTagsMap[j.id]||[];
+      h+=`<div class="diary-multiday-card ${j.status}" style="left:calc(${left}% + 4px);width:calc(${w}% - 8px)"
+            draggable="true" ondragstart="onDiaryDragStart(event,'${j.id}')" ondragend="onDiaryDragEnd(event)"
+            onclick="openJobFromDiary(event,'${j.id}')">
+        <span class="diary-multiday-time">${new Date(j.booked_at).toLocaleTimeString('en-AU',{hour:'numeric',minute:'2-digit'})}</span>
+        <span class="diary-multiday-type">${esc(j.job_type)}</span>
+        <span class="diary-multiday-sub"><strong>${esc(j.customer?.name||'Unknown')}</strong>${contact?' · '+esc(contact):''}${vehDesc?' · '+esc(vehDesc):''}</span>
+        ${tags.length?`<span class="diary-multiday-tags">${tags.map(t=>`<span class="tag-chip" style="background:${esc(t.color)};font-size:9px">${esc(t.name)}</span>`).join('')}</span>`:''}
+      </div>`;
+    });
+
   h+='</div>';
   main.innerHTML=h;
 }
@@ -7892,7 +7920,9 @@ function renderDiaryWeekGrid(){
 // Re-rendering the WHOLE grid on every card expand was exactly why opening a
 // booking looked like the diary reloading — every column faded back in.
 function diaryDayBodyContentHtml(d,dateStr){
-  const dayJobs=jobs.filter(j=>j.booked_at&&sameLocalDate(new Date(j.booked_at),d)&&jobMatchesTagFilter(j))
+  const dayJobs=jobs.filter(j=>j.booked_at&&sameLocalDate(new Date(j.booked_at),d)&&jobMatchesTagFilter(j)
+    // Multi-day jobs render as spanning bars — exclude from regular day columns
+    &&!(j.pickup_at&&j.pickup_at.slice(0,10)>j.booked_at.slice(0,10)))
     .sort((a,b)=>new Date(a.booked_at)-new Date(b.booked_at));
   const notesForDay=dayNotes.filter(n=>n.note_date===dateStr);
   return `
