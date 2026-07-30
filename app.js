@@ -2072,7 +2072,8 @@ async function setPoStatus(id,status){
 // (matches how MechanicDesk itself displays line items), so GST = total/11,
 // not total*0.1 — that would double-count the tax already folded into price.
 function calcInvoiceTotals(items,discountType,discountValue){
-  const rawTotal=(items||[]).reduce((s,it)=>s+(Number(it.qty)||0)*(Number(it.unit_price)||0),0);
+  const priced=(items||[]).filter(it=>!it.is_header);
+  const rawTotal=priced.reduce((s,it)=>s+(Number(it.qty)||0)*(Number(it.unit_price)||0),0);
   let discountAmount=0;
   if(discountType==='percent'&&discountValue)discountAmount=rawTotal*(Number(discountValue)/100);
   else if(discountType==='fixed'&&discountValue)discountAmount=Number(discountValue);
@@ -3302,9 +3303,26 @@ async function buildInvoicePanelHtml(id){
 
     <div class="invoice-items-wrap">
     <table class="invoice-items-table">
-      <thead><tr><th>Description</th><th class="qty-col">Qty</th><th class="price-col">Unit Price</th><th class="total-col">Total</th><th class="tax-col">Tax</th><th class="del-col"></th></tr></thead>
+      <thead><tr><th class="drag-col"></th><th>Description</th><th class="qty-col">Qty</th><th class="price-col">Unit Price</th><th class="total-col">Total</th><th class="tax-col">Tax</th><th class="del-col"></th></tr></thead>
       <tbody>
-        ${invoiceItems.map(it=>`<tr>
+        ${invoiceItems.map(it=>it.is_header?`<tr class="invoice-header-row" draggable="true" data-item-id="${it.id}"
+            ondragstart="onInvItemDragStart(event,'${it.id}')"
+            ondragover="onInvItemDragOver(event)"
+            ondragleave="onInvItemDragLeave(event)"
+            ondrop="onInvItemDrop(event,'${it.id}','${inv.id}')"
+            ondragend="onInvItemDragEnd(event)">
+          <td class="drag-col"><span class="drag-handle" title="Drag to reorder">⋮⋮</span></td>
+          <td colspan="5" class="invoice-header-cell">
+            <input class="invoice-header-input" value="${esc(it.description)}" placeholder="Section header…" onchange="updateInvoiceItem('${it.id}','description',this.value)">
+          </td>
+          <td class="del-col"><button class="btn-danger-link" onclick="deleteInvoiceItem('${it.id}')">✕</button></td>
+        </tr>`:`<tr draggable="true" data-item-id="${it.id}"
+            ondragstart="onInvItemDragStart(event,'${it.id}')"
+            ondragover="onInvItemDragOver(event)"
+            ondragleave="onInvItemDragLeave(event)"
+            ondrop="onInvItemDrop(event,'${it.id}','${inv.id}')"
+            ondragend="onInvItemDragEnd(event)">
+          <td class="drag-col"><span class="drag-handle" title="Drag to reorder">⋮⋮</span></td>
           <td><input value="${esc(it.description)}" onchange="updateInvoiceItem('${it.id}','description',this.value)"></td>
           <td class="qty-col"><input type="number" step="1" min="1" value="${it.qty}" onchange="updateInvoiceItem('${it.id}','qty',this.value)"></td>
           <td class="price-col"><input type="number" step="0.01" value="${it.unit_price}" onchange="updateInvoiceItem('${it.id}','unit_price',this.value)"></td>
@@ -3317,7 +3335,10 @@ async function buildInvoicePanelHtml(id){
       </tbody>
     </table>
     </div>
-    <button class="btn-link" onclick="toggleInvoiceItemPicker('${inv.id}')">+ Add line item</button>
+    <div style="display:flex;gap:var(--space-2);margin-top:var(--space-2)">
+      <button class="btn-link" onclick="toggleInvoiceItemPicker('${inv.id}')">+ Add line item</button>
+      <button class="btn-link" onclick="addInvoiceHeader('${inv.id}')">+ Add header</button>
+    </div>
     <div id="invoice-item-picker-area"></div>
 
     <div class="field-row" style="align-items:center">
@@ -3580,7 +3601,8 @@ async function deleteInvoiceItem(itemId){
 
 async function addBlankInvoiceItem(invoiceId){
   try{
-    const {error}=await sb.from('desk_invoice_items').insert({invoice_id:invoiceId,description:'New item',qty:1,unit_price:0});
+    const nextOrder=invoiceItems.length;
+    const {error}=await sb.from('desk_invoice_items').insert({invoice_id:invoiceId,description:'New item',qty:1,unit_price:0,sort_order:nextOrder});
     if(error)throw error;
     await renderInvoiceDetail(invoiceId);
   }catch(e){showToast('Could not add item')}
@@ -3612,10 +3634,79 @@ async function addStockInvoiceItem(invoiceId,stockId){
   const s=stockItems.find(x=>x.id===stockId);
   if(!s)return;
   try{
-    const {error}=await sb.from('desk_invoice_items').insert({invoice_id:invoiceId,description:s.name,qty:1,unit_price:s.sell_price,stock_id:s.id});
+    const nextOrder=invoiceItems.length;
+    const {error}=await sb.from('desk_invoice_items').insert({invoice_id:invoiceId,description:s.name,qty:1,unit_price:s.sell_price,stock_id:s.id,sort_order:nextOrder});
     if(error)throw error;
     await renderInvoiceDetail(invoiceId);
   }catch(e){showToast('Could not add item')}
+}
+
+// ── Invoice section headers & drag-and-drop reordering ──────────
+
+async function addInvoiceHeader(invoiceId){
+  try{
+    const nextOrder=invoiceItems.length;
+    const {error}=await sb.from('desk_invoice_items').insert({invoice_id:invoiceId,description:'New section',is_header:true,sort_order:nextOrder});
+    if(error)throw error;
+    await renderInvoiceDetail(invoiceId);
+  }catch(e){showToast('Could not add header')}
+}
+
+let dragItemId=null;
+
+function onInvItemDragStart(e,itemId){
+  dragItemId=itemId;
+  e.dataTransfer.effectAllowed='move';
+  e.dataTransfer.setData('text/plain',itemId);
+  e.currentTarget.classList.add('dragging');
+  // Let the browser draw its own ghost — no custom drag image needed.
+}
+
+function onInvItemDragOver(e){
+  e.preventDefault();
+  e.dataTransfer.dropEffect='move';
+  e.currentTarget.classList.add('drag-over');
+}
+
+function onInvItemDragLeave(e){
+  e.currentTarget.classList.remove('drag-over');
+}
+
+async function onInvItemDrop(e,targetId,invoiceId){
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if(!dragItemId||dragItemId===targetId){dragItemId=null;return}
+  await reorderInvoiceItems(invoiceId,dragItemId,targetId);
+  dragItemId=null;
+}
+
+function onInvItemDragEnd(e){
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
+  dragItemId=null;
+}
+
+// Reorders items by moving dragId to targetId's position, renumbering
+// sort_order for everything between. Batch-updates only the changed rows.
+async function reorderInvoiceItems(invoiceId,dragId,targetId){
+  const items=[...invoiceItems];
+  const dragIdx=items.findIndex(it=>it.id===dragId);
+  const targetIdx=items.findIndex(it=>it.id===targetId);
+  if(dragIdx===-1||targetIdx===-1)return;
+  const [moved]=items.splice(dragIdx,1);
+  const insertAt=dragIdx<targetIdx?targetIdx:(targetIdx);
+  items.splice(insertAt,0,moved);
+  // Re-number sort_order sequentially
+  const updates=[];
+  items.forEach((it,i)=>{if(it.sort_order!==i)updates.push({id:it.id,sort_order:i})});
+  if(!updates.length)return;
+  try{
+    for(const u of updates){
+      const {error}=await sb.from('desk_invoice_items').update({sort_order:u.sort_order}).eq('id',u.id);
+      if(error)throw error;
+    }
+    await renderInvoiceDetail(invoiceId);
+  }catch(e){showToast('Could not reorder')}
 }
 
 async function updateInvoiceField(invoiceId,field,value){
@@ -3780,7 +3871,7 @@ function buildInvoiceHtml(inv,items,template){
   if(template==='aurora'){
     const GRAD='linear-gradient(135deg,rgba(10,16,48,.22) 0%,rgba(10,16,48,.06) 100%),linear-gradient(135deg,#1F90F7 0%,#2C5FF5 45%,#6D5FFF 100%)';
     const FJ="'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
-    const rowsA=items.map(it=>`<tr>
+    const rowsA=items.map(it=>it.is_header?`<tr><td colspan="4" style="padding:16px 0 8px 0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6B7280;border-bottom:1px solid rgba(26,34,51,.09)">${esc(it.description)}</td></tr>`:`<tr>
       <td style="padding:13px 8px 13px 0;border-bottom:1px solid rgba(26,34,51,.06);font-size:14px;color:#1A2233;vertical-align:top">${esc(it.description)}</td>
       <td style="padding:13px 8px;border-bottom:1px solid rgba(26,34,51,.06);font-size:14px;color:#1A2233;text-align:right;vertical-align:top;${NUM}">${it.qty}</td>
       <td style="padding:13px 8px;border-bottom:1px solid rgba(26,34,51,.06);font-size:14px;color:#1A2233;text-align:right;vertical-align:top;${NUM}">$${Number(it.unit_price).toFixed(2)}</td>
@@ -3856,7 +3947,7 @@ function buildInvoiceHtml(inv,items,template){
   }
 
   if(template==='compact'){
-    const rowsC=items.map(it=>`<tr>
+    const rowsC=items.map(it=>it.is_header?`<tr><td colspan="4" style="padding:14px 0 6px 0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${MUTED};border-bottom:1px solid ${BORDER_STRONG}">${esc(it.description)}</td></tr>`:`<tr>
       <td style="padding:8px 8px 8px 0;border-bottom:1px solid ${BORDER};font-size:13px;line-height:1.5;color:${INK};vertical-align:top">${esc(it.description)}</td>
       <td style="padding:8px;border-bottom:1px solid ${BORDER};font-size:13px;color:${INK};text-align:right;${NUM}">${it.qty}</td>
       <td style="padding:8px;border-bottom:1px solid ${BORDER};font-size:13px;color:${INK};text-align:right;${NUM}">$${Number(it.unit_price).toFixed(2)}</td>
@@ -3893,7 +3984,7 @@ function buildInvoiceHtml(inv,items,template){
 </body></html>`;
   }
 
-  const rows=items.map(it=>`<tr>
+  const rows=items.map(it=>it.is_header?`<tr><td colspan="4" style="padding:16px 0 8px 0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${MUTED};border-bottom:1px solid ${BORDER_STRONG}">${esc(it.description)}</td></tr>`:`<tr>
     <td style="padding:12px 8px 12px 0;border-bottom:1px solid ${BORDER};font-size:15px;line-height:1.55;color:${INK};vertical-align:top">${esc(it.description)}</td>
     <td style="padding:12px 8px;border-bottom:1px solid ${BORDER};font-size:15px;color:${INK};text-align:right;vertical-align:top;${NUM}">${it.qty}</td>
     <td style="padding:12px 8px;border-bottom:1px solid ${BORDER};font-size:15px;color:${INK};text-align:right;vertical-align:top;${NUM}">$${Number(it.unit_price).toFixed(2)}</td>

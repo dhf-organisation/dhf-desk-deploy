@@ -1037,6 +1037,21 @@ input[type=checkbox],input[type=radio],progress{accent-color:var(--accent)}
 .invoice-items-table .tax-col{width:140px}
 .invoice-items-table tr.clickable-row{cursor:pointer}
 .invoice-items-table tr.clickable-row:hover{background:var(--accent-tint)}
+/* Drag handle column — narrow, centred, inert to pointer events on the cell
+   itself (the child span is what's interactive), so clicking an input inside
+   the row doesn't accidentally grab the drag handle. */
+.invoice-items-table .drag-col{width:28px;padding:var(--space-2) 0 var(--space-2) var(--space-1);text-align:center;vertical-align:middle}
+.drag-handle{display:inline-block;cursor:grab;color:var(--text-muted);font-size:13px;letter-spacing:-1px;line-height:1;user-select:none;padding:var(--space-1) 0}
+.drag-handle:active{cursor:grabbing}
+/* Row states during drag — opacity on the source, a soft accent tint on the
+   target. Headers and items share the same states. */
+.invoice-items-table tr.dragging{opacity:.4}
+.invoice-items-table tr.drag-over{background:var(--accent-tint);box-shadow:inset 0 2px 0 var(--accent)}
+/* Section header row — spans all data columns as a single divider. */
+.invoice-header-row td{border-bottom:var(--border-width) solid var(--border-strong) !important}
+.invoice-header-cell{padding:var(--space-4) 0 var(--space-2) !important}
+.invoice-header-input{font-family:inherit;width:100%;padding:var(--space-2) var(--space-3);border:var(--border-width) solid var(--border-strong);border-radius:var(--radius-sm);font-size:14px;font-weight:700;color:var(--text);background:var(--control-bg)}
+.invoice-header-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--focus-ring)}
 /* SIGNATURE (Payments): the method-share bars. This is the one place in the
    app with an actual chart, so the gradient goes here rather than on a tab —
    raw --grad-primary, no scrim, because no text sits on these. Rounded caps
