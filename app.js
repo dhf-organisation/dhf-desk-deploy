@@ -3261,6 +3261,14 @@ async function buildInvoicePanelHtml(id){
   const docType=inv.doc_type||'invoice';
   const isQuote=docType==='quote';
   const {rawTotal,discountAmount,totalIncl,gst,exclSubtotal}=calcInvoiceTotals(invoiceItems,inv.discount_type,inv.discount_value);
+  // Walk items in sort_order: each header accumulates the total of the priced
+  // items beneath it, up to the next header. Items before the first header
+  // have no group and no subtotal shown. Used in the header row below.
+  let curHeader=null; const hdrTotals={};
+  invoiceItems.forEach(it=>{
+    if(it.is_header){curHeader=it.id;hdrTotals[it.id]=0}
+    else if(curHeader)hdrTotals[curHeader]=(hdrTotals[curHeader]||0)+(Number(it.qty)||0)*(Number(it.unit_price)||0);
+  });
   const vehDesc=inv.vehicle?[inv.vehicle.make,inv.vehicle.model].filter(Boolean).join(' ')+(inv.vehicle.rego?' ('+inv.vehicle.rego+')':''):'';
   let amountPaid=0,balanceDue=totalIncl;
   if(!isQuote){
@@ -3314,6 +3322,7 @@ async function buildInvoicePanelHtml(id){
           <td class="drag-col"><span class="drag-handle" title="Drag to reorder">⋮⋮</span></td>
           <td colspan="5" class="invoice-header-cell">
             <input class="invoice-header-input" value="${esc(it.description)}" placeholder="Section header…" onchange="updateInvoiceItem('${it.id}','description',this.value)">
+            <span class="header-subtotal">$${hdrTotals[it.id].toFixed(2)}</span>
           </td>
           <td class="del-col"><button class="btn-danger-link" onclick="deleteInvoiceItem('${it.id}')">✕</button></td>
         </tr>`:`<tr draggable="true" data-item-id="${it.id}"
