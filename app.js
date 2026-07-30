@@ -2324,10 +2324,13 @@ function printPaymentsReport(){
 </body></html>`;
   const w=window.open('','_blank');
   if(!w){showToast('Pop-up blocked — allow pop-ups to print');return}
-  w.document.write(html);
+  w.document.write(`<!doctype html><html><head><meta charset="UTF-8"><title>Payments report</title>
+<style>body{margin:0;font-family:system-ui,sans-serif}.print-toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;background:#1A2233;color:#fff}.print-toolbar-title{font-size:14px;font-weight:700}.print-toolbar-btn{font-family:inherit;font-size:14px;font-weight:600;padding:8px 20px;border:none;border-radius:999px;cursor:pointer;background:#fff;color:#1A2233}.print-toolbar-btn:hover{opacity:.9}@media print{.print-toolbar{display:none}}</style></head><body>
+<div class="print-toolbar"><span class="print-toolbar-title">Payments report — preview</span><button class="print-toolbar-btn" onclick="window.print()">Print</button></div>
+${html}
+</body></html>`);
   w.document.close();
   w.focus();
-  w.print();
 }
 
 // ── Bills (accounts payable — sub-tab of Invoices) ──────────
@@ -4059,15 +4062,25 @@ function printInvoice(id){
   const html=buildInvoiceHtml(inv,invoiceItems,invoiceTemplate);
   const w=window.open('','_blank');
   if(!w){showToast('Pop-up blocked — allow pop-ups to print');return}
-  w.document.write(html);
+  const docLabel=inv.doc_type==='quote'?'Quote':'Invoice';
+  const docRef=`${docPrefix(inv.doc_type)}-${inv.invoice_no}`;
+  w.document.write(`<!doctype html><html><head><meta charset="UTF-8"><title>${docLabel} ${docRef}</title>
+<style>
+  body{margin:0;font-family:system-ui,sans-serif}
+  .print-toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;background:#1A2233;color:#fff}
+  .print-toolbar-title{font-size:14px;font-weight:700}
+  .print-toolbar-btn{font-family:inherit;font-size:14px;font-weight:600;padding:8px 20px;border:none;border-radius:999px;cursor:pointer;background:#fff;color:#1A2233}
+  .print-toolbar-btn:hover{opacity:.9}
+  @media print{.print-toolbar{display:none}}
+</style></head><body>
+<div class="print-toolbar">
+  <span class="print-toolbar-title">${docLabel} ${docRef} — preview</span>
+  <button class="print-toolbar-btn" onclick="window.print()">Print</button>
+</div>
+${html}
+</body></html>`);
   w.document.close();
   w.focus();
-  // Aurora's logo <img> (and web font) load asynchronously — printing
-  // immediately after document.write() can fire before they're painted.
-  // 'load' fires once every resource (images included) is done; falls back
-  // to an immediate print if the doc was already complete (e.g. no logo).
-  if(w.document.readyState==='complete')w.print();
-  else w.addEventListener('load',()=>w.print());
 }
 
 function emailInvoice(id){
@@ -6715,10 +6728,13 @@ function printJobCard(jobId){
   const html=buildJobCardHtml(j,jobNotes,tags);
   const w=window.open('','_blank');
   if(!w){showToast('Pop-up blocked — allow pop-ups to print');return}
-  w.document.write(html);
+  w.document.write(`<!doctype html><html><head><meta charset="UTF-8"><title>Job card</title>
+<style>body{margin:0;font-family:system-ui,sans-serif}.print-toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;background:#1A2233;color:#fff}.print-toolbar-title{font-size:14px;font-weight:700}.print-toolbar-btn{font-family:inherit;font-size:14px;font-weight:600;padding:8px 20px;border:none;border-radius:999px;cursor:pointer;background:#fff;color:#1A2233}.print-toolbar-btn:hover{opacity:.9}@media print{.print-toolbar{display:none}}</style></head><body>
+<div class="print-toolbar"><span class="print-toolbar-title">Job card — preview</span><button class="print-toolbar-btn" onclick="window.print()">Print</button></div>
+${html}
+</body></html>`);
   w.document.close();
   w.focus();
-  w.print();
 }
 
 function emailJobCard(jobId){
