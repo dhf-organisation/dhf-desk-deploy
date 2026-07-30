@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>DHF Desk — Staff</title>
+
+<!-- Staff mobile app (2026-07-28). Same site, same Supabase project, and the
+     SAME Google Sign-In staff already use in index.html/app.js (same
+     data-client_id, same ALLOWED_DOMAIN/ALLOWED_EMAILS check) — this page
+     lives on the same origin, so no new Google Cloud Console authorization
+     is needed, unlike portal.html's new OTP provider. Deliberately its own
+     bootstrap, not a mobile view bolted onto app.js: no shared state, a bug
+     here can't touch the desktop app or vice versa. -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2C5FF5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="DHF Staff">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%232C5FF5'/%3E%3Ctext x='50' y='62' font-family='system-ui' font-weight='800' font-size='34' fill='white' text-anchor='middle'%3EDHF%3C/text%3E%3C/svg%3E">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#F4F5F7; --bg-alt:#EDEEF2; --surface:#FFFFFF;
+  --glass-solid:rgba(255,255,255,.92); --glass-border:rgba(255,255,255,.75);
+  --grad-primary:linear-gradient(135deg,#1F90F7 0%,#2C5FF5 45%,#6D5FFF 100%);
+  --grad-scrim:linear-gradient(135deg,rgba(10,16,48,.22) 0%,rgba(10,16,48,.06) 100%);
+  --accent:#2C5FF5; --accent-tint:color-mix(in srgb, var(--accent) 10%, var(--surface));
+  --text:#1A2233; --text-muted:#6B7280; --text-on-grad:#FFFFFF;
+  --success:#16A34A; --success-text:#14803C; --success-tint:color-mix(in srgb, var(--success) 12%, var(--surface));
+  --warning:#D97706; --warning-text:#B45309; --warning-tint:color-mix(in srgb, var(--warning) 12%, var(--surface));
+  --danger:#DC2626; --danger-text:#DC2626; --danger-tint:color-mix(in srgb, var(--danger) 10%, var(--surface));
+  --border:rgba(26,34,51,.09); --border-strong:#8A91A0;
+  --shadow-soft:0 12px 32px rgba(44,95,245,.18); --shadow-card:0 4px 16px rgba(26,34,51,.08);
+  --radius:20px; --radius-sm:12px; --radius-pill:999px;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-6:24px; --space-8:32px;
+  --font:"Plus Jakarta Sans",system-ui,sans-serif;
+  --ease:cubic-bezier(0.22,1,0.36,1); --duration:220ms;
+}
+html,body{height:100%}
+body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;overscroll-behavior-y:contain}
+.wrap{max-width:520px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
+h1{font-size:20px;font-weight:800;letter-spacing:-.01em}
+h2{font-size:16px;font-weight:700;letter-spacing:-.005em}
+p.muted{color:var(--text-muted);font-size:13px}
+.brand{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-6) var(--space-4) var(--space-4)}
+.brand-mark{width:44px;height:44px;border-radius:var(--radius-sm);background-image:var(--grad-scrim),var(--grad-primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;box-shadow:var(--shadow-soft)}
+
+/* Sign-in */
+.signin-card{margin:var(--space-8) var(--space-4);background:var(--surface);border:1px solid var(--glass-border);border-radius:var(--radius);box-shadow:var(--shadow-soft);padding:var(--space-6);text-align:center}
+#g_id_onload,.g_id_signin{display:flex;justify-content:center;margin-top:var(--space-4)}
+
+/* App shell: content scrolls, tab bar pinned to the bottom (thumb reach) */
+.screen{flex:1;overflow-y:auto;padding:var(--space-4);padding-bottom:calc(80px + var(--space-4))}
+.topbar{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-4) var(--space-4) var(--space-2);position:sticky;top:0;background:rgba(244,245,247,.92);backdrop-filter:blur(10px);z-index:5}
+.topbar h1{flex:1}
+.back-btn{font-family:inherit;background:none;border:none;font-size:20px;color:var(--accent);cursor:pointer;padding:var(--space-1)}
+.tabbar{position:fixed;left:0;right:0;bottom:0;max-width:520px;margin:0 auto;display:flex;background:rgba(255,255,255,.92);backdrop-filter:blur(12px);border-top:1px solid var(--border);padding:var(--space-2) var(--space-2) calc(var(--space-2) + env(safe-area-inset-bottom))}
+.tabbar button{flex:1;font-family:inherit;background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:2px;padding:var(--space-2);border-radius:var(--radius-sm);font-size:11px;font-weight:700;color:var(--text-muted);cursor:pointer}
+.tabbar button.active{color:var(--accent);background:var(--accent-tint)}
+.tabbar .icon{font-size:20px}
+
+/* Cards / lists */
+.card{background:var(--glass-solid);border:1px solid var(--glass-border);border-radius:var(--radius);box-shadow:var(--shadow-card);padding:var(--space-4);margin-bottom:var(--space-3)}
+.card:active{transform:scale(.98)}
+.job-row{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-3);margin-bottom:var(--space-1)}
+.job-sub{font-size:13px;color:var(--text-muted)}
+.pill{display:inline-block;padding:4px var(--space-3);border-radius:var(--radius-pill);font-size:11px;font-weight:700;white-space:nowrap}
+.pill.booking{background:var(--accent-tint);color:var(--accent)}
+.pill.in_progress{background:var(--warning-tint);color:var(--warning-text)}
+.pill.on_hold{background:var(--danger-tint);color:var(--danger-text)}
+.pill.finished{background:var(--success-tint);color:var(--success-text)}
+.pill.clocked-in{background:var(--success-tint);color:var(--success-text)}
+.progress-row{display:flex;align-items:center;gap:var(--space-2);margin-top:var(--space-2);font-size:12px;color:var(--text-muted)}
+.progress-track{flex:1;height:6px;border-radius:var(--radius-pill);background:var(--bg-alt);overflow:hidden}
+.progress-fill{height:100%;background:var(--accent)}
+.empty{text-align:center;padding:var(--space-8) var(--space-4);color:var(--text-muted)}
+
+/* Job detail */
+.status-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-2);margin-bottom:var(--space-4)}
+.status-btn{font-family:inherit;border:1px solid var(--border-strong);background:var(--surface);border-radius:var(--radius-sm);padding:var(--space-3);font-size:13px;font-weight:700;color:var(--text);cursor:pointer}
+.status-btn.current{background-image:var(--grad-scrim),var(--grad-primary);color:#fff;border-color:transparent}
+.clock-btn{width:100%;font-family:inherit;border:none;border-radius:var(--radius-pill);padding:var(--space-3);font-size:15px;font-weight:800;cursor:pointer;margin-bottom:var(--space-4)}
+.clock-btn.in{background-image:var(--grad-scrim),var(--grad-primary);color:#fff;box-shadow:var(--shadow-soft)}
+.clock-btn.out{background:var(--danger-tint);color:var(--danger-text)}
+.checklist-item{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3) 0;border-bottom:1px solid var(--border)}
+.checklist-item:last-child{border-bottom:none}
+.checklist-item input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent);flex-shrink:0}
+.checklist-item.done label{color:var(--text-muted);text-decoration:line-through}
+.note{padding:var(--space-2) var(--space-3);border-radius:var(--radius-sm);margin-bottom:var(--space-2);font-size:13px;max-width:88%}
+.note.staff-office{background:var(--bg-alt)}
+.note.staff-visible{background:var(--accent-tint)}
+.note.customer{background:var(--warning-tint);margin-left:auto}
+.note-meta{font-size:11px;color:var(--text-muted);margin-bottom:2px}
+.form-input,.form-select{width:100%;padding:var(--space-3);border:1px solid var(--border-strong);border-radius:var(--radius-sm);font-size:15px;font-family:inherit;margin-bottom:var(--space-3);background:#fff;color:var(--text)}
+.form-label{font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:var(--space-1);display:block}
+.btn-primary{width:100%;font-family:inherit;background-image:var(--grad-scrim),var(--grad-primary);color:#fff;border:none;border-radius:var(--radius-pill);padding:var(--space-3);font-size:15px;font-weight:700;cursor:pointer}
+.check-row{display:flex;align-items:center;gap:var(--space-2);font-size:13px;color:var(--text-muted);margin-bottom:var(--space-3)}
+.section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:var(--space-4) 0 var(--space-2)}
+
+/* Diary day nav */
+.day-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)}
+.day-nav button{font-family:inherit;background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius-pill);width:36px;height:36px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <div class="brand"><div class="brand-mark">DHF</div><div><h1 style="font-size:16px">DHF Desk</h1><p class="muted">Staff</p></div></div>
+  <div id="app" style="flex:1;display:flex;flex-direction:column"><div class="screen"><p class="muted">Loading…</p></div></div>
+</div>
+<div class="toast" id="toast" style="position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#1A2233;color:#fff;padding:10px 20px;border-radius:999px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s;z-index:999"></div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SB_URL='https://cztpumgrvhmcvvpqbfqo.supabase.co';
+const SB_KEY='sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub3';
+const sb=supabase.createClient(SB_URL,SB_KEY);
+
+// Same allowlist as app.js — deliberately kept identical, not re-derived,
+// so "who counts as staff" can never drift between the two apps.
+const ALLOWED_DOMAIN='dhftyres.com.au';
+const ALLOWED_EMAILS=['dushentissera@gmail.com'];
+
+const STATUS_LABEL={booking:'Booking',in_progress:'In Progress',on_hold:'On Hold',finished:'Finished'};
+const STATUS_ORDER=['booking','in_progress','on_hold','finished'];
+
+let currentUser=null;   // {email, name}
+let myEmployee=null;    // desk_employees row matching currentUser.email, or null
+let activeTab='jobs';    // 'jobs' | 'diary'
+let diaryDate=new Date();
+let currentJobId=null;   // set while a job-detail screen is open
+
+function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
+function fmtTime(iso){return iso?new Date(iso).toLocaleTimeString('en-AU',{hour:'numeric',minute:'2-digit'}):''}
+function fmtDateShort(d){return d.toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'})}
+function isoDateOnly(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function showToast(m){const t=document.getElementById('toast');t.textContent=m;t.style.opacity='1';clearTimeout(t._t);t._t=setTimeout(()=>t.style.opacity='0',2200)}
+
+// ── Auth — mirrors app.js's handleGoogleSignIn/enterSession exactly ──
+async function handleGoogleSignIn(r){
+  try{
+    const {data,error}=await sb.auth.signInWithIdToken({provider:'google',token:r.credential});
+    if(error||!data.user){showToast('Sign-in failed');google.accounts.id.disableAutoSelect();return}
+    await enterSession(data.user);
+  }catch(e){showToast('Sign-in failed')}
+}
+async function enterSession(user){
+  const email=user.email||'',domain=email.split('@')[1]||'';
+  if(domain!==ALLOWED_DOMAIN&&!ALLOWED_EMAILS.includes(email)){
+    showToast('Access denied for '+(email||'(no email returned)'));
+    google.accounts.id.disableAutoSelect();
+    await sb.auth.signOut();
+    return;
+  }
+  currentUser={email,name:user.user_metadata?.full_name||user.user_metadata?.name||email.split('@')[0]};
+  try{
+    const {data}=await sb.from('desk_employees').select('id,name,email').eq('email',email).maybeSingle();
+    myEmployee=data||null;
+  }catch(e){myEmployee=null}
+  renderShell();
+}
+async function signOutStaff(){
+  google.accounts.id.disableAutoSelect();
+  await sb.auth.signOut();
+  currentUser=null;myEmployee=null;
+  renderSignIn();
+}
+
+function renderSignIn(){
+  document.getElementById('app').innerHTML=`
+    <div class="signin-card">
+      <h1>Sign in</h1>
+      <p class="muted" style="margin-top:var(--space-2)">Use your DHF Tyres Google account.</p>
+      <div id="g_id_onload"
+           data-client_id="992833623399-s28cqha40ho2f4s2mvihskiicngb3g5e.apps.googleusercontent.com"
+           data-auto_prompt="false"
+           data-callback="handleGoogleSignIn"></div>
+      <div class="g_id_signin" data-type="standard" data-theme="filled_blue" data-size="large" data-text="sign_in_with" data-shape="pill"></div>
+    </div>`;
+}
+
+// ── Shell: tab bar + routed content ──
+function renderShell(){
+  document.getElementById('app').innerHTML=`<div id="screen-host" style="flex:1;display:flex;flex-direction:column"></div>
+    <nav class="tabbar" id="tabbar">
+      <button class="${activeTab==='jobs'?'active':''}" onclick="switchTab('jobs')"><span class="icon">🧰</span>My Jobs</button>
+      <button class="${activeTab==='diary'?'active':''}" onclick="switchTab('diary')"><span class="icon">📅</span>Diary</button>
+    </nav>`;
+  switchTab(activeTab);
+}
+function switchTab(tab){
+  activeTab=tab;currentJobId=null;
+  document.querySelectorAll('.tabbar button').forEach((b,i)=>b.classList.toggle('active',(i===0)===(tab==='jobs')));
+  if(tab==='jobs')renderMyJobs();else renderDiaryDay();
+}
+
+// ── My Jobs ──
+async function renderMyJobs(){
+  const host=document.getElementById('screen-host');
+  host.innerHTML=`<div class="topbar"><h1>My Jobs</h1></div><div class="screen" id="jobs-list"><p class="muted">Loading…</p></div>`;
+  if(!myEmployee){
+    document.getElementById('jobs-list').innerHTML=`<div class="card empty">Your account isn't linked to a staff record yet.<br>Ask the office to add ${esc(currentUser.email)} to your Employee profile in Settings.</div>`;
+    return;
+  }
+  try{
+    const {data,error}=await sb.from('desk_jobs')
+      .select('id,job_type,status,booked_at,customer_status_note,customer:desk_customers(name),vehicle:desk_vehicles(make,model,rego),checklist:desk_job_checklist_items(is_complete)')
+      .eq('assigned_employee_id',myEmployee.id).eq('is_deleted',false)
+      .order('booked_at',{ascending:true});
+    if(error)throw error;
+    const openEntries=await myOpenClockEntries();
+    renderJobList('jobs-list',data||[],openEntries,"No jobs assigned to you right now.");
+  }catch(e){
+    document.getElementById('jobs-list').innerHTML=`<div class="card empty">Could not load your jobs.</div>`;
+  }
+}
+async function myOpenClockEntries(){
+  if(!myEmployee)return{};
+  try{
+    const {data}=await sb.from('desk_job_time_entries').select('job_id').eq('employee_id',myEmployee.id).is('clock_out',null);
+    const m={};(data||[]).forEach(r=>m[r.job_id]=true);return m;
+  }catch(e){return{}}
+}
+function renderJobList(hostId,jobs,openEntries,emptyMsg){
+  const host=document.getElementById(hostId);
+  if(!jobs.length){host.innerHTML=`<div class="card empty">${emptyMsg}</div>`;return}
+  host.innerHTML=jobs.map(j=>{
+    const vehDesc=j.vehicle?[j.vehicle.make,j.vehicle.model].filter(Boolean).join(' ')+(j.vehicle.rego?' ('+j.vehicle.rego+')':''):'';
+    const done=(j.checklist||[]).filter(c=>c.is_complete).length,total=(j.checklist||[]).length;
+    const pct=total?Math.round(done/total*100):0;
+    return `<div class="card" onclick="openJobDetail('${j.id}')">
+      <div class="job-row">
+        <div><strong>${esc(j.job_type)}</strong><div class="job-sub">${esc(j.customer?.name||'—')}${vehDesc?' · '+esc(vehDesc):''}</div></div>
+        <div style="text-align:right;flex-shrink:0">
+          <span class="pill ${j.status}">${STATUS_LABEL[j.status]}</span>
+          ${openEntries&&openEntries[j.id]?'<div class="pill clocked-in" style="margin-top:4px">⏱ Clocked in</div>':''}
+        </div>
+      </div>
+      ${j.booked_at?`<div class="job-sub">${fmtTime(j.booked_at)}</div>`:''}
+      ${j.customer_status_note?`<div class="job-sub" style="margin-top:var(--space-2)">${esc(j.customer_status_note)}</div>`:''}
+      ${total?`<div class="progress-row"><div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div><span>${done}/${total}</span></div>`:''}
+    </div>`;
+  }).join('');
+}
+
+// ── Diary (day at a time, every job, not just mine) ──
+function renderDiaryDay(){
+  const host=document.getElementById('screen-host');
+  const label=fmtDateShort(diaryDate);
+  host.innerHTML=`<div class="topbar" style="flex-direction:column;align-items:stretch">
+      <h1 style="margin-bottom:var(--space-2)">Diary</h1>
+      <div class="day-nav">
+        <button onclick="shiftDiaryDay(-1)">←</button>
+        <strong>${label}</strong>
+        <button onclick="shiftDiaryDay(1)">→</button>
+      </div>
+    </div>
+    <div class="screen" id="diary-list"><p class="muted">Loading…</p></div>`;
+  loadDiaryDay();
+}
+function shiftDiaryDay(delta){diaryDate=new Date(diaryDate);diaryDate.setDate(diaryDate.getDate()+delta);renderDiaryDay()}
+async function loadDiaryDay(){
+  const dateStr=isoDateOnly(diaryDate);
+  const nextDay=new Date(diaryDate);nextDay.setDate(nextDay.getDate()+1);
+  try{
+    const {data,error}=await sb.from('desk_jobs')
+      .select('id,job_type,status,booked_at,customer_status_note,customer:desk_customers(name),vehicle:desk_vehicles(make,model,rego),checklist:desk_job_checklist_items(is_complete)')
+      .eq('is_deleted',false).gte('booked_at',dateStr).lt('booked_at',isoDateOnly(nextDay))
+      .order('booked_at',{ascending:true});
+    if(error)throw error;
+    renderJobList('diary-list',data||[],null,'Nothing booked this day.');
+  }catch(e){
+    document.getElementById('diary-list').innerHTML=`<div class="card empty">Could not load the diary.</div>`;
+  }
+}
+
+// ── Job detail ──
+async function openJobDetail(jobId){
+  currentJobId=jobId;
+  const host=document.getElementById('screen-host');
+  host.innerHTML=`<div class="topbar"><button class="back-btn" onclick="switchTab(activeTab)">←</button><h1>Job</h1></div><div class="screen" id="job-detail"><p class="muted">Loading…</p></div>`;
+  await loadJobDetail(jobId);
+}
+async function loadJobDetail(jobId){
+  try{
+    const [{data:job,error},{data:openEntry}]=await Promise.all([
+      sb.from('desk_jobs').select('id,job_type,status,booked_at,customer_status_note,customer:desk_customers(name,mobile,phone),vehicle:desk_vehicles(make,model,rego),checklist:desk_job_checklist_items(id,label,is_complete,sort_order),notes:desk_job_notes(id,body,is_office_only,author_type,created_at)').eq('id',jobId).single(),
+      myEmployee?sb.from('desk_job_time_entries').select('id,clock_in').eq('job_id',jobId).eq('employee_id',myEmployee.id).is('clock_out',null).maybeSingle():Promise.resolve({data:null})
+    ]);
+    if(error)throw error;
+    renderJobDetail(job,openEntry);
+  }catch(e){
+    document.getElementById('job-detail').innerHTML=`<div class="card empty">Could not load this job.</div>`;
+  }
+}
+function renderJobDetail(j,openEntry){
+  const vehDesc=j.vehicle?[j.vehicle.make,j.vehicle.model].filter(Boolean).join(' ')+(j.vehicle.rego?' ('+j.vehicle.rego+')':''):'';
+  const checklist=(j.checklist||[]).slice().sort((a,b)=>a.sort_order-b.sort_order);
+  const notes=(j.notes||[]).slice().sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  document.getElementById('job-detail').innerHTML=`
+    <div class="card">
+      <h2>${esc(j.job_type)}</h2>
+      <p class="job-sub" style="margin-top:4px">${esc(j.customer?.name||'—')}${vehDesc?' · '+esc(vehDesc):''}</p>
+      ${j.customer?.mobile?`<p class="job-sub">📞 ${esc(j.customer.mobile)}</p>`:''}
+      ${j.customer_status_note?`<div class="job-sub" style="margin-top:var(--space-2);background:var(--bg-alt);padding:var(--space-2);border-radius:var(--radius-sm)">${esc(j.customer_status_note)}</div>`:''}
+    </div>
+
+    <div class="section-title">Status</div>
+    <div class="status-grid">
+      ${STATUS_ORDER.map(s=>`<button class="status-btn ${s===j.status?'current':''}" onclick="setJobStatusMobile('${j.id}','${s}')">${STATUS_LABEL[s]}</button>`).join('')}
+    </div>
+
+    ${myEmployee?`
+    <button class="clock-btn ${openEntry?'out':'in'}" onclick="${openEntry?`clockOut('${openEntry.id}')`:`clockIn('${j.id}')`}">
+      ${openEntry?'⏹ Clock Out (started '+fmtTime(openEntry.clock_in)+')':'▶ Clock In'}
+    </button>`:''}
+
+    <div class="section-title">Checklist</div>
+    <div class="card">
+      ${checklist.length?checklist.map(c=>`
+        <div class="checklist-item ${c.is_complete?'done':''}">
+          <input type="checkbox" id="chk-${c.id}" ${c.is_complete?'checked':''} onchange="toggleChecklistItem('${c.id}',this.checked)">
+          <label for="chk-${c.id}">${esc(c.label)}</label>
+        </div>`).join(''):'<p class="muted">No checklist for this job type.</p>'}
+    </div>
+
+    <div class="section-title">Notes</div>
+    <div id="notes-thread">
+      ${notes.length?notes.map(n=>`
+        <div class="note ${n.author_type==='customer'?'customer':(n.is_office_only?'staff-office':'staff-visible')}">
+          <div class="note-meta">${n.author_type==='customer'?'Customer':'Staff'}${n.is_office_only?' · office only':''} · ${fmtTime(n.created_at)}</div>
+          ${esc(n.body)}
+        </div>`).join(''):'<p class="muted">No notes yet.</p>'}
+    </div>
+    <textarea class="form-input" id="new-note-body" placeholder="Add a note…" style="min-height:60px;resize:vertical"></textarea>
+    <label class="check-row"><input type="checkbox" id="new-note-office" checked style="width:18px;height:18px;accent-color:var(--accent)"> Office only (not visible to customer)</label>
+    <button class="btn-primary" onclick="addNoteMobile('${j.id}')">Send</button>
+  `;
+}
+
+async function setJobStatusMobile(jobId,status){
+  try{
+    const {error}=await sb.from('desk_jobs').update({status,updated_at:new Date().toISOString()}).eq('id',jobId);
+    if(error)throw error;
+    showToast('Status updated');
+    await loadJobDetail(jobId);
+  }catch(e){showToast('Could not update status')}
+}
+async function clockIn(jobId){
+  try{
+    const {error}=await sb.from('desk_job_time_entries').insert({job_id:jobId,employee_id:myEmployee.id});
+    if(error)throw error;
+    showToast('Clocked in');
+    await loadJobDetail(jobId);
+  }catch(e){showToast('Could not clock in')}
+}
+async function clockOut(timeEntryId){
+  try{
+    const {error}=await sb.from('desk_job_time_entries').update({clock_out:new Date().toISOString()}).eq('id',timeEntryId);
+    if(error)throw error;
+    showToast('Clocked out');
+    await loadJobDetail(currentJobId);
+  }catch(e){showToast('Could not clock out')}
+}
+async function toggleChecklistItem(itemId,checked){
+  try{
+    const {error}=await sb.from('desk_job_checklist_items').update({
+      is_complete:checked,
+      completed_by:checked?(currentUser?.name||null):null,
+      completed_at:checked?new Date().toISOString():null
+    }).eq('id',itemId);
+    if(error)throw error;
+  }catch(e){showToast('Could not update checklist');await loadJobDetail(currentJobId)}
+}
+async function addNoteMobile(jobId){
+  const bodyEl=document.getElementById('new-note-body');
+  const body=bodyEl.value.trim();
+  if(!body)return;
+  const isOffice=document.getElementById('new-note-office').checked;
+  try{
+    const {error}=await sb.from('desk_job_notes').insert({job_id:jobId,body,is_office_only:isOffice});
+    if(error)throw error;
+    await loadJobDetail(jobId);
+  }catch(e){showToast('Could not add note')}
+}
+
+(async function init(){
+  const {data:{session}}=await sb.auth.getSession();
+  if(session?.user){await enterSession(session.user)}else{renderSignIn()}
+})();
+</script>
+</body>
+</html>

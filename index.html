@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DHF Desk</title>
+
+<!-- ── No-flash theme init (v5) ──────────────────────────────────────────
+     MUST stay here: before the stylesheet and before app.js, so data-theme is
+     on <html> before the first paint. app.js also has theme functions, but it
+     loads after this block, which is far too late — the browser would paint a
+     light frame first and dark-mode users would see it flash white on every
+     navigation. Deliberately inline and blocking for the same reason.
+     Reads the saved choice, else the OS preference. The try/catch matters:
+     localStorage throws outright in a blocked-cookies/private context, and an
+     uncaught error here would take out the whole parse. -->
+<script>
+(function () {
+  try {
+    var t = localStorage.getItem('dhf-theme');
+    if (t !== 'light' && t !== 'dark') {
+      t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+</script>
+
+<!-- v4 "Aurora Glass" — Plus Jakarta Sans carries display, body AND data (the
+     brief drops the mono face; figures are held in line by tabular-nums, not a
+     second family). APP UI ONLY: the three print/email builders in app.js
+     (buildInvoiceHtml, buildJobCardHtml, printPaymentsReport) emit safe-font
+     literals and never see this face.
+     Loaded as <link> rather than @import so the browser can start the font
+     fetch during HTML preload scan instead of waiting for the stylesheet to
+     parse. CSP already allows fonts.googleapis.com (style-src) and
+     fonts.gstatic.com (font-src) — see _headers. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+/* ============================================================
+   DESIGN TOKENS — v4 "Aurora Glass" (see design-brief.md).
+   Light glassmorphism. Single source of truth for the APP UI ONLY.
+   Replaces the v3 "Pit Wall" dark spine outright — this is a chosen
+   reversal, not a drift (see the note at the top of the brief).
+   The three print/email builders in app.js (buildInvoiceHtml,
+   buildJobCardHtml, printPaymentsReport) emit resolved literals and
+   safe fonts and reference ZERO custom properties — verified — so
+   nothing in this block can reach a printed or emailed document.
+   That carve-out is structural, not a convention to remember.
+   ============================================================ */
+:root{
+  /* Flipped with the theme: native <select> popups, date pickers, spinners
+     and autofill must render light or every dropdown flashes dark against a
+     pale app — the loudest tell of a half-applied theme. */
+  color-scheme:light;
+
+  /* ── Base / surfaces — pale, airy, layered up ── */
+  --bg:#F4F5F7;                  /* app base, pale cool gray */
+  --bg-alt:#EDEEF2;
+  --surface:#FFFFFF;             /* solid cards / dense panels */
+  --glass:rgba(255,255,255,.60);         /* frosted fill — pair with --blur */
+  --glass-border:rgba(255,255,255,.75);
+  /* Dense screens (diary, hoist board, queues) use this instead of --glass:
+     still translucent enough to layer, opaque enough to stay legible and
+     cheap when 200 of them are on screen at once. */
+  --glass-solid:rgba(255,255,255,.88);
+  --blur:blur(16px);
+
+  /* ── Mode-dependent surfaces that were literals until v5 ──
+     These four were written as rgba(255,255,255,…) directly in the rules,
+     which is invisible to a theme flip — white stays white on a dark base.
+     Naming them is what actually makes dark mode work; the [data-theme]
+     block below only has to restate these, not re-style 30 components. */
+  --header-bg:rgba(255,255,255,.72);   /* frosted sticky command bar */
+  --control-bg:rgba(255,255,255,.75);  /* pills, secondary buttons, search */
+  --inset-bg:rgba(255,255,255,.55);    /* passive panels nested inside cards */
+  --input-bg:#FFFFFF;                  /* solid form fields */
+  --scrollbar-thumb:rgba(26,34,51,.22);
+  --scrollbar-thumb-hover:rgba(26,34,51,.34);
+  --focus-ring:rgba(44,95,245,.15);
+  /* Accent used as TEXT on an --accent-tint fill (badges, hover states,
+     chips). Same colour as --accent in light; dark needs a lighter step
+     because a tint mixed FROM the accent sits too close to it — measured
+     3.79:1 with --accent, 6.25:1 with this. Lowering the tint instead tops
+     out at 4.54:1 and makes it invisible on an ink base. */
+  --accent-ink:var(--accent);
+  --shadow-xs:0 1px 3px rgba(26,34,51,.07);
+  --shadow-modal:0 24px 64px rgba(26,34,51,.24);  /* modal + search palette */
+  --kbd-bg:rgba(26,34,51,.08);                    /* Ctrl-K chip in the header */
+  /* Text that sits ON a status fill. Light mode uses solid mid-tone status
+     colours, so white works; dark mode brightens them (#F87171 etc) and white
+     drops to ~2.4:1 — hence a token rather than a literal #FFFFFF. */
+  --on-status:#FFFFFF;
+  /* The ambient colour fields behind the glass. Tokenised so dark can dim
+     them — at light-mode opacity they glow like lens flare on an ink base. */
+  --aurora:
+    radial-gradient(46% 44% at 4% 0%,   rgba(31,144,247,.42), transparent 68%),
+    radial-gradient(42% 40% at 96% 4%,  rgba(109,95,255,.36), transparent 68%),
+    radial-gradient(50% 34% at 72% 96%, rgba(164,93,235,.26), transparent 70%),
+    radial-gradient(44% 32% at 18% 88%, rgba(31,144,247,.20), transparent 70%);
+
+  /* ── Gradient — the signature ── */
+  --grad-primary:linear-gradient(135deg,#1F90F7 0%,#2C5FF5 45%,#6D5FFF 100%);
+  --grad-accent:linear-gradient(135deg,#6D5FFF 0%,#A45DEB 100%);
+  /* AA scrim. White on the azure end (#1F90F7) is only 3.29:1 — large text
+     only. Laid over the gradient it composites to 4.77:1 at the lightest
+     point and better everywhere else, so any text on a gradient clears AA.
+     Applied by .grad-surface / .btn-primary rather than baked into
+     --grad-primary, so the raw gradient stays available for bars and rules
+     that carry no text. */
+  --grad-scrim:linear-gradient(135deg,rgba(10,16,48,.22) 0%,rgba(10,16,48,.06) 100%);
+
+  /* ── Accent ── */
+  --accent:#2C5FF5;              /* solid electric blue — 5.17:1 on white */
+  --accent-2:#6D5FFF;            /* indigo/violet */
+  --accent-hover:#1E4FDD;
+  --accent-text:#FFFFFF;         /* white ON the accent */
+  --accent-glow:rgba(44,95,245,.35);
+  --signal-cool:#0F766E;         /* "live"/telemetry states ONLY, sparingly */
+
+  /* ── Text ── */
+  --text:#1A2233;                /* dark slate on light surfaces — 14.9:1 */
+  --text-muted:#6B7280;          /* 4.83:1 */
+  --text-on-grad:#FFFFFF;
+
+  /* ── Borders ── */
+  --border:rgba(26,34,51,.09);   /* decorative internal dividers */
+  --border-strong:#8A91A0;       /* input/control boundaries — 3.16:1 (1.4.11) */
+  --hairline:rgba(26,34,51,.06);
+
+  /* ── Status ── */
+  --success:#16A34A;
+  --warning:#D97706;
+  --danger:#DC2626;
+
+  /* A11Y — the brief locks an AA floor *and* proposes a palette. --success at
+     3.30:1 and --warning at 3.15:1 on white breach that floor as *text*, so
+     each gains a darkened text twin; the brief values stay for fills, bars and
+     borders, where 3:1 (1.4.11) is the bar and they clear it. --danger needs
+     no twin (4.83:1). Verified on --surface:
+       text 14.9:1 · text-muted 4.83:1 · accent 5.17:1 · accent-text-on-accent
+       5.17:1 · success-text 5.02:1 · warning-text 4.57:1 · danger 4.83:1
+       signal-cool 5.30:1 · white-on-gradient-with-scrim 4.77:1 worst case. */
+  --success-text:#14803C;
+  --warning-text:#B45309;
+  --danger-text:var(--danger);
+
+  /* ── Chart series (categorical) ──
+     A fixed-order categorical palette for the Reports pie charts and legends.
+     Slot 1 is --accent and slot 7 the Aurora violet, so the charts sit in the
+     same family as the rest of the app; the middle six are chosen for
+     separation, not brand.
+
+     Validated, not eyeballed — worst adjacent pair, OKLab ΔE ×100:
+       CVD (protan) 9.1  ·  normal vision 19.6   (targets: >=8 and >=15)
+     Three slots fall below 3:1 against the panel, which obligates relief
+     rather than being dismissable — the Reports legend already prints the
+     label, value and percentage beside every swatch, so identity never rests
+     on colour alone and that obligation is met.
+
+     Deliberately NOT the status colours: --success/--warning/--danger stay
+     reserved for state. The current palette spends slots 2-4 on them and then
+     three near-identical greys on 5-7, which is why it fails (worst adjacent
+     pair ΔE 5.2 — indistinguishable even with full colour vision).
+
+     NOT YET IN USE: app.js reportColorPalette() still names the old tokens.
+     Wiring these up is a one-line change to that function — see the note to
+     Dinuka. Defined here so that change is a one-liner when approved. */
+  --chart-1:#2C5FF5;  --chart-2:#EB6834;
+  --chart-3:#1BAF7A;  --chart-4:#EDA100;
+  --chart-5:#E87BA4;  --chart-6:#008300;
+  --chart-7:#6D5FFF;  --chart-8:#E34948;
+
+  /* Faint tints — mixed from the spine, never invented. Low percentages: on a
+     white surface a 10% mix already reads clearly, where the dark theme
+     needed 16%. */
+  --accent-tint:color-mix(in srgb, var(--accent) 10%, var(--surface));
+  --success-tint:color-mix(in srgb, var(--success) 12%, var(--surface));
+  --warning-tint:color-mix(in srgb, var(--warning) 12%, var(--surface));
+  --danger-tint:color-mix(in srgb, var(--danger) 10%, var(--surface));
+
+  /* ── Atmosphere & depth ── */
+  --panel-wash:linear-gradient(180deg,#FFFFFF 0%,#F7F8FB 100%);
+  --glow:radial-gradient(circle at 50% 0%, var(--accent-glow), transparent 70%);
+
+  /* ── Radius — rounded. This look is deliberately soft. ── */
+  --radius:20px;
+  --radius-sm:12px;
+  --radius-pill:999px;
+
+  /* ── Shadow — depth is blur + soft colored lift, not hard edges ── */
+  --shadow-soft:0 12px 32px rgba(44,95,245,.18);   /* glass / hero cards */
+  --shadow-card:0 4px 16px rgba(26,34,51,.08);     /* solid cards */
+  --shadow-lift:0 20px 44px rgba(44,95,245,.24);   /* hover state */
+  --shadow-pop:0 16px 40px rgba(26,34,51,.16);     /* menus, overlays */
+  --shadow-none:none;
+
+  --border-width:1px;
+  --border-width-strong:2px;
+  --rule-width:2px;
+
+  /* ── Spacing (unchanged, 4px base) ── */
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px;
+  --space-6:24px; --space-8:32px; --space-12:48px; --space-16:64px; --space-24:96px;
+
+  /* ── Type scale ── */
+  --text-display-xl:64px;        /* hero KPI numeral, one per screen */
+  --text-display:44px;
+  --text-compact:14px;           /* dense grids */
+  --text-micro:11px;             /* sanctioned sub-scale exception, dense only */
+
+  --font-display:"Plus Jakarta Sans",system-ui,sans-serif;
+  --font-body:"Plus Jakarta Sans",system-ui,sans-serif;
+  /* v4 drops the mono face: one family carries everything and figures are held
+     in line by tabular-nums. The .mono/.data call sites keep working. */
+  --font-data:"Plus Jakarta Sans",system-ui,sans-serif;
+
+  /* ── Motion — gentle fade-up and settle ── */
+  --duration-fast:140ms; --duration:260ms; --ease:cubic-bezier(0.22,1,0.36,1);
+
+  /* ── Component vars with no direct brief token ── */
+  --modal-overlay:rgba(26,34,51,.38);
+  --toast-bg:#1A2233;
+  --toast-text:#FFFFFF;
+
+  /* ── Compatibility aliases ──
+     Retired v3 token names remapped onto the Aurora Glass spine.
+
+     CORRECTION to what this block claimed in step 1: it said the aliases were
+     scaffolding that would be empty once every screen had had its pass. That
+     was wrong, and only checkable once the screens were done. The stylesheet
+     side is indeed clean — no rule in this file names a v3 token any more —
+     but app.js writes INLINE STYLES that reference them directly, and inline
+     styles are markup, not CSS, so no amount of restyling reaches them:
+         --text-secondary  55 call sites
+         --radius-input     8
+         --text-primary     5
+         --radius-none      1
+     These four are load-bearing and stay until someone edits app.js, which is
+     a code change rather than a presentation one. The other nine aliases had
+     zero references across both files once Messages landed, and are deleted.
+     (All 69 call sites sit in app-UI render functions — none are inside
+     buildInvoiceHtml / buildJobCardHtml / printPaymentsReport, which resolve
+     every value to a literal. Verified by line number, not assumed.)
+
+     Note --radius-none no longer means "no radius": it resolves to the card
+     radius, which is what rounded the whole app off in one move during step 1.
+     The name is a v3 fossil; the behaviour is intentional. */
+  --text-primary:var(--text);
+  --text-secondary:var(--text-muted);
+  --radius-none:var(--radius);
+  --radius-input:var(--radius-sm);
+
+  /* ── Tokens read by NAME from app.js, not through var() ──
+     reportColorPalette() and the canvas chart code call
+     cssVar('--x') === getComputedStyle().getPropertyValue('--x'). That is a
+     string lookup, so it is invisible to any audit that greps for `var(--x)`
+     — which is exactly how --text-tertiary got deleted in the Inventory pass
+     and silently broke chart series 6. An undefined lookup returns '',
+     assigning '' to ctx.fillStyle is a no-op, so the slice keeps the PREVIOUS
+     series' colour and its legend swatch renders transparent. No error, no
+     console warning, just a wrong chart.
+     DO NOT REMOVE without grepping app.js for cssVar('--…') as well.
+     --ink is the v3 fossil the palette still asks for as series 8; it has been
+     undefined since before this re-theme, so series 8 was already broken. */
+  --text-tertiary:#9AA1AF;
+  --ink:var(--text);
+}
+
+/* ============================================================
+   DARK — v5. Colour, shadow and glass ONLY.
+   Radius, spacing, type, motion and --grad-primary are deliberately absent:
+   the brief's rule is that switching themes turns the lights down on the same
+   room, and the gradient signature is what makes both modes one product. The
+   toggle is no longer the no-op v3/v4 left behind — this is the second
+   palette it was always missing.
+   ============================================================ */
+[data-theme="dark"]{
+  color-scheme:dark;   /* native selects, date pickers, scrollbars, autofill */
+
+  --bg:#0A0E1A;
+  --bg-alt:#0F1526;
+  --surface:#151B2E;
+  --glass:rgba(255,255,255,.06);
+  --glass-border:rgba(255,255,255,.12);
+  /* Dense panels: light mode leans on 88% white, dark needs a near-opaque
+     DARK fill or the base bleeds through and grid text loses contrast. */
+  --glass-solid:rgba(21,27,46,.92);
+
+  --accent:#4F86FF;
+  --accent-2:#8B7BFF;
+  --accent-hover:#6E9CFF;
+  --accent-glow:rgba(79,134,255,.45);
+  --signal-cool:#2DD4BF;
+
+  --text:#EAEEF7;
+  --text-muted:#9AA5BD;
+
+  --success:#34D399;
+  --warning:#FBBF24;
+  --danger:#F87171;
+  /* The darkened twins exist ONLY because mid-tone status colours fail as
+     text on white. On an ink base the bright values are already 6–10:1, so
+     the twins collapse back onto them rather than staying dark-on-dark. */
+  --success-text:var(--success);
+  --warning-text:var(--warning);
+  --danger-text:var(--danger);
+  /* Bright status fills + white text is ~2.4:1. Ink on them instead. */
+  --on-status:#0A0E1A;
+
+  /* Tints are color-mix'd against --surface, so they follow automatically —
+     but 10% of an accent into an ink panel is invisible, the same problem v3
+     hit in reverse. Re-mixed richer here. */
+  --accent-tint:color-mix(in srgb, var(--accent) 20%, var(--surface));
+  --success-tint:color-mix(in srgb, var(--success) 18%, var(--surface));
+  --warning-tint:color-mix(in srgb, var(--warning) 18%, var(--surface));
+  --danger-tint:color-mix(in srgb, var(--danger) 18%, var(--surface));
+
+  --border:rgba(255,255,255,.10);
+  --hairline:rgba(255,255,255,.06);
+  /* 3.9:1 on --surface — WCAG 1.4.11 wants 3:1 for control boundaries, and a
+     white-alpha border can't reach it over these panels (a 22% white hairline
+     composites to about 2:1). Solid value, measured. */
+  --border-strong:#6E7A8C;
+
+  --header-bg:rgba(15,21,38,.72);
+  --control-bg:rgba(255,255,255,.05);
+  --inset-bg:rgba(255,255,255,.04);
+  --input-bg:#1B2237;
+  --scrollbar-thumb:rgba(255,255,255,.18);
+  --scrollbar-thumb-hover:rgba(255,255,255,.30);
+  --focus-ring:rgba(79,134,255,.28);
+  --accent-ink:#93B4FF;   /* 6.25:1 on --accent-tint — see note in :root */
+
+  --shadow-soft:0 12px 40px rgba(45,95,245,.35);
+  --shadow-card:0 6px 20px rgba(0,0,0,.45);
+  --shadow-lift:0 20px 48px rgba(45,95,245,.42);
+  --shadow-pop:0 16px 40px rgba(0,0,0,.60);
+  --shadow-xs:0 1px 3px rgba(0,0,0,.40);
+  /* An ink-tinted shadow is invisible on an ink base — modals would lose
+     their lift entirely and read as flat cut-outs. Black, and deeper. */
+  --shadow-modal:0 28px 72px rgba(0,0,0,.70);
+  --kbd-bg:rgba(255,255,255,.12);
+
+  --panel-wash:linear-gradient(180deg,#1A2138 0%,#151B2E 100%);
+  --modal-overlay:rgba(0,0,0,.62);
+  /* Inverted, so a transient message reads as a layer above the app rather
+     than another dark card among dark cards. */
+  --toast-bg:#EAEEF7;
+  --toast-text:#0A0E1A;
+
+  /* Dimmed hard: at light-mode opacity these read as lens flare on ink. */
+  --aurora:
+    radial-gradient(46% 44% at 4% 0%,   rgba(31,144,247,.20), transparent 68%),
+    radial-gradient(42% 40% at 96% 4%,  rgba(109,95,255,.18), transparent 68%),
+    radial-gradient(50% 34% at 72% 96%, rgba(164,93,235,.13), transparent 70%),
+    radial-gradient(44% 32% at 18% 88%, rgba(31,144,247,.10), transparent 70%);
+
+  /* Same eight hues re-stepped for the ink surface — NOT an automatic flip.
+     Validated against --surface #151B2E: worst adjacent CVD ΔE 8.4 (target
+     >=8), normal-vision ΔE 19.3 (floor 15), and all eight clear 3:1 contrast,
+     so unlike light mode no slot needs label relief. Slots 1 and 7 stay the
+     mode's --accent / --accent-2 so charts sit in the same family as the app. */
+  --chart-1:#4F86FF;  --chart-2:#D95926;
+  --chart-3:#199E70;  --chart-4:#C98500;
+  --chart-5:#D55181;  --chart-6:#008300;
+  --chart-7:#8B7BFF;  --chart-8:#E66767;
+
+  /* Aliases app.js reads by name — see the note in :root. */
+  --text-tertiary:#7C879B;
+}
+
+/* ── Print: always light, in both themes ──────────────────────────────
+   Separate from the template carve-out and solves a different problem. The
+   carve-out covers the three builders that open their OWN document; this
+   covers Ctrl-P on the app itself, which would otherwise print an ink-black
+   page. Forces the light values back over [data-theme="dark"]. */
+@media print{
+  :root,[data-theme="dark"]{
+    color-scheme:light;
+    --bg:#FFFFFF; --bg-alt:#FFFFFF; --surface:#FFFFFF;
+    --glass:#FFFFFF; --glass-solid:#FFFFFF; --glass-border:#E4E4E7;
+    --header-bg:#FFFFFF; --control-bg:#FFFFFF; --inset-bg:#FFFFFF;
+    --input-bg:#FFFFFF;
+    --text:#1A2233; --text-muted:#6B7280;
+    --border:#E4E4E7; --border-strong:#8A91A0;
+    --accent-ink:var(--accent);
+    --shadow-soft:none; --shadow-card:none; --shadow-lift:none;
+    --shadow-pop:none; --shadow-xs:none; --shadow-modal:none;
+    --kbd-bg:#EDEEF2;
+    --aurora:none;
+  }
+  /* Blur costs pages and renders as grey mud on paper. */
+  *{backdrop-filter:none !important;-webkit-backdrop-filter:none !important}
+}
+
+body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-height:100vh;font-size:15px;line-height:1.55;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+
+/* ── Base atmosphere ──────────────────────────────────────────────────
+   The aurora the glass is lit by: two soft colour fields — blue top-left,
+   violet right — bled into the pale base at low opacity. This is what makes
+   translucent cards worth having; over a flat gray they would have nothing
+   to be translucent *of*. Fixed, so it reads as the room rather than
+   something that scrolls with the content. Sits at z-index -1 above the body
+   fill and below all content; pointer-events:none so it can never intercept
+   a drag (the diary and hoist board are drag surfaces). */
+body::before{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background-image:var(--aurora);
+  background-attachment:fixed}
+
+h1,h2,h3,.h-display,.h1,.h2,.h3{font-family:var(--font-display);letter-spacing:-.01em}
+
+/* Figures line up column to column. One family now, so this is numerals only. */
+.mono,.data{font-family:var(--font-data);font-variant-numeric:tabular-nums;letter-spacing:0}
+
+/* Focus — always visible, 2px accent, 2px offset (brief) */
+:focus-visible{outline:var(--border-width-strong) solid var(--accent);outline-offset:2px;border-radius:var(--radius-sm)}
+
+/* Native control chrome that color-scheme alone doesn't reach. */
+::selection{background:var(--accent);color:var(--accent-text)}
+input[type=checkbox],input[type=radio],progress{accent-color:var(--accent)}
+::-webkit-scrollbar{width:12px;height:12px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--scrollbar-thumb);border:3px solid transparent;background-clip:content-box;border-radius:var(--radius-pill)}
+::-webkit-scrollbar-thumb:hover{background:var(--scrollbar-thumb-hover);background-clip:content-box}
+*{scrollbar-color:var(--scrollbar-thumb) transparent}
+
+/* ── Glass & gradient primitives ──────────────────────────────────────
+   The two surfaces the whole look is built from. Everything downstream
+   composes these rather than re-declaring blur and shadow.
+
+   .glass       — true frosted card. Reserve for hero/feature cards; the blur
+                  is expensive and 60% white over a busy grid hurts legibility.
+   .glass-solid — the dense-screen variant: nearly opaque, no blur, cheap.
+   .grad-surface— the signature gradient, scrim included so white text on it
+                  clears AA at every stop. */
+.glass{background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+  border:var(--border-width) solid var(--glass-border);border-radius:var(--radius);box-shadow:var(--shadow-soft)}
+.glass-solid{background:var(--glass-solid);border:var(--border-width) solid var(--glass-border);
+  border-radius:var(--radius);box-shadow:var(--shadow-card)}
+.grad-surface{background-image:var(--grad-scrim),var(--grad-primary);color:var(--text-on-grad);
+  border-radius:var(--radius);box-shadow:var(--shadow-soft)}
+.grad-surface .field-label,.grad-surface .panel-title,.grad-surface h1,.grad-surface h2,.grad-surface h3{color:var(--text-on-grad)}
+/* Muted text on a gradient can't use --text-muted — it would vanish. Nor can
+   it dim the white: measured against the azure end of the gradient WITH the
+   scrim, 82% white is 3.78:1 and even 90% only reaches 4.32:1, both short of
+   AA for text this size. So secondary text on a gradient stays pure white at
+   4.77:1 and steps down in weight instead of opacity. */
+.grad-surface .muted,.grad-surface .field-label{color:var(--text-on-grad);font-weight:500}
+
+/* Cards lift toward the light on hover. Transform + shadow only — never
+   layout — so nothing reflows under the pointer. */
+.lift{transition:transform var(--duration) var(--ease),box-shadow var(--duration) var(--ease)}
+.lift:hover{transform:translateY(-3px);box-shadow:var(--shadow-lift)}
+
+/* ── Load motion ──────────────────────────────────────────────────────
+   A soft fade-up-and-settle. .rise on any element; .stagger on a parent to
+   cascade its children. Both are inert under prefers-reduced-motion via the
+   global block below. */
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.rise{animation:rise var(--duration) var(--ease) both}
+.stagger>*{animation:rise var(--duration) var(--ease) both}
+.stagger>*:nth-child(1){animation-delay:0ms}
+.stagger>*:nth-child(2){animation-delay:60ms}
+.stagger>*:nth-child(3){animation-delay:120ms}
+.stagger>*:nth-child(4){animation-delay:180ms}
+.stagger>*:nth-child(5){animation-delay:240ms}
+.stagger>*:nth-child(6){animation-delay:300ms}
+.stagger>*:nth-child(n+7){animation-delay:360ms}
+
+/* ── Accessibility floor: motion is enhancement, never required ──────
+   Global and unconditional, so the per-screen load sequences added in step 2
+   inherit it by default rather than each needing to remember. Delay is zeroed
+   alongside duration — otherwise a staggered card would still sit invisible
+   for its delay before snapping in, which is the flicker the setting exists
+   to prevent. Hover lift is neutralised too. */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms !important;animation-delay:0ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;scroll-behavior:auto !important}
+  .lift:hover,.panel:hover,.btn-primary:hover,.quick-add-btn:hover,
+  .diary-card:hover,.hoist-unassigned-card:hover,
+  .btn-secondary:hover,.template-option-card:hover{transform:none !important}
+}
+
+/* ── Login ──
+   The one screen that is nothing but a card, so it gets the full treatment:
+   true glass floating on the aurora, rising on load. */
+.login-page{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:var(--space-6)}
+.login-card{background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+  border:var(--border-width) solid var(--glass-border);border-radius:var(--radius);box-shadow:var(--shadow-soft);
+  padding:var(--space-12) var(--space-8);text-align:left;max-width:400px;width:100%;
+  animation:rise var(--duration) var(--ease) both}
+/* The mark is the one gradient moment on this screen. */
+.login-logo{display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;
+  background-image:var(--grad-scrim),var(--grad-primary);color:var(--text-on-grad);border-radius:var(--radius-sm);
+  box-shadow:var(--shadow-soft);font-family:var(--font-display);font-weight:800;font-size:16px;
+  letter-spacing:-.02em;margin-bottom:var(--space-6)}
+.login-title{font-family:var(--font-display);font-size:32px;line-height:1.1;font-weight:700;letter-spacing:-.015em;margin-bottom:var(--space-2)}
+.login-sub{font-size:15px;color:var(--text-muted);margin-bottom:var(--space-8)}
+.login-domain{font-size:13px;color:var(--text-muted);margin-top:var(--space-4);padding:var(--space-3);
+  background:var(--inset-bg);border:var(--border-width) solid var(--glass-border);border-radius:var(--radius-sm)}
+
+/* ── App shell / header ── */
+.app{display:none}
+/* ── App shell: the frosted command bar ──────────────────────────────
+   The one piece of chrome on every screen, so it sets the material for all
+   12 views in a single move. v3's inverted dark band is retired with the dark
+   theme: on a light app the header is a sticky pane of glass the content
+   scrolls *under*, which is what sells the blur — a frosted bar over a flat
+   fill looks identical to a solid one. */
+.app-header{position:sticky;top:0;z-index:300;
+  background:var(--header-bg);backdrop-filter:var(--blur) saturate(140%);-webkit-backdrop-filter:var(--blur) saturate(140%);
+  border-bottom:var(--border-width) solid var(--glass-border);box-shadow:0 2px 16px rgba(26,34,51,.06);
+  color:var(--text);padding:var(--space-3) var(--space-4);display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:var(--space-4)}
+/* The wordmark is the shell's gradient moment — the app's name, not a nav item. */
+.app-logo{font-family:var(--font-display);font-size:18px;font-weight:800;letter-spacing:-.02em;
+  background-image:var(--grad-primary);-webkit-background-clip:text;background-clip:text;color:transparent;
+  display:flex;align-items:center;gap:var(--space-2);white-space:nowrap}
+.app-nav{display:flex;gap:var(--space-1);justify-self:center;flex-wrap:wrap;justify-content:center}
+/* Pill tabs: the active one wears the gradient, so the current view is the
+   one bright thing in the bar. Replaces v3's underline, which was a squared
+   idiom and reads as unfinished against rounded chrome. */
+.app-nav button{font-family:inherit;background:none;border:none;padding:var(--space-2) var(--space-3);
+  border-radius:var(--radius-pill);font-size:13px;font-weight:600;color:var(--text-muted);cursor:pointer;white-space:nowrap;
+  transition:background var(--duration-fast) var(--ease),color var(--duration-fast) var(--ease)}
+.app-nav button.active{background-image:var(--grad-scrim),var(--grad-primary);color:var(--text-on-grad);
+  box-shadow:0 4px 12px rgba(44,95,245,.28)}
+.app-nav button:hover:not(.active){background:rgba(44,95,245,.09);color:var(--accent)}
+.app-right{display:flex;align-items:center;gap:var(--space-2);justify-self:end}
+.app-quick{display:flex;align-items:center;gap:var(--space-2)}
+.quick-search-wrap{position:relative}
+/* Fixed-size trigger, not a growing input — the growing input was the bug:
+   .quick-search-input sat in the header's auto-sized third grid column, so
+   focusing it (130px → 200px) shrank the space left for .app-nav's 1fr
+   column. .app-nav wraps at gap:var(--space-1), and with 12 nav buttons that
+   column is already near its wrap point, so the width the search box gained
+   was width the nav lost — often enough to push it onto a second line, which
+   grows .app-header's own row height. A button this size never changes
+   width, so it can't ever start that chain, regardless of query length. */
+.quick-search-trigger{height:32px;padding:0 var(--space-3) 0 var(--space-2);display:flex;align-items:center;gap:var(--space-2);border-radius:var(--radius-pill);border:var(--border-width) solid var(--border-strong);background:var(--control-bg);color:var(--text-muted);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background var(--duration-fast) var(--ease),border-color var(--duration-fast) var(--ease),color var(--duration-fast) var(--ease)}
+.quick-search-trigger:hover{background:var(--accent-tint);border-color:var(--accent-ink);color:var(--accent-ink)}
+.quick-search-kbd{font-size:10px;font-weight:700;letter-spacing:.02em;padding:2px 5px;border-radius:var(--radius-sm);background:var(--kbd-bg);color:var(--text-muted)}
+@media(max-width:640px){.quick-search-trigger-label,.quick-search-kbd{display:none}.quick-search-trigger{padding:0;width:32px;justify-content:center}}
+
+/* ── Global search palette ─────────────────────────────────────────────
+   position:fixed, so it is not a descendant of the header's layout at all —
+   it cannot push, stretch, or resize .app-header no matter how many results
+   come back or how long the query gets. This is the structural fix for the
+   header-growth bug above; the trigger-button change alone only removes the
+   trigger, this removes the mechanism.
+   Rises like a modal but from higher up and with a touch of scale, so it
+   reads as its own layer floating above the header rather than a form. */
+.search-palette-backdrop{position:fixed;inset:0;z-index:600;background:var(--modal-overlay);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;justify-content:center;padding:96px var(--space-4) var(--space-6);animation:fade var(--duration-fast) var(--ease) both}
+.search-palette{width:100%;max-width:560px;max-height:min(70vh,520px);display:flex;flex-direction:column;background:var(--surface);border:var(--border-width) solid var(--glass-border);border-radius:var(--radius);box-shadow:var(--shadow-modal);overflow:hidden;animation:searchPaletteIn var(--duration) var(--ease) both}
+@keyframes searchPaletteIn{from{opacity:0;transform:translateY(-16px) scale(.97)}to{opacity:1;transform:none}}
+.search-palette-input-row{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-4);border-bottom:var(--border-width) solid var(--border);flex-shrink:0}
+.search-palette-input-row .icon{font-size:16px;flex-shrink:0;opacity:.55}
+.search-palette-input{flex:1;min-width:0;border:none;background:none;font-family:inherit;font-size:16px;color:var(--text);outline:none}
+.search-palette-input::placeholder{color:var(--text-muted)}
+.search-palette-esc{font-size:11px;font-weight:700;color:var(--text-muted);background:var(--bg-alt);padding:3px 6px;border-radius:var(--radius-sm);flex-shrink:0;cursor:pointer}
+.search-palette-results{overflow-y:auto}
+@media(max-width:640px){.search-palette-backdrop{padding:56px var(--space-3) var(--space-3)}}
+@media(prefers-reduced-motion:reduce){.search-palette-backdrop,.search-palette{animation:none !important}}
+
+.quick-search-item{padding:var(--space-2) var(--space-3);font-size:13px;cursor:pointer;border-bottom:var(--border-width) solid var(--border)}
+.quick-search-item:last-child{border-bottom:none}
+.quick-search-item:hover{background:var(--accent-tint)}
+.quick-search-item-type{font-size:var(--text-micro);text-transform:uppercase;color:var(--text-muted);font-weight:600;letter-spacing:.04em}
+/* The bar's primary action — round, gradient, glowing. */
+.quick-add-btn{width:32px;height:32px;border-radius:var(--radius-pill);background-image:var(--grad-scrim),var(--grad-primary);color:var(--text-on-grad);border:none;font-size:17px;font-weight:600;cursor:pointer;line-height:1;flex-shrink:0;box-shadow:0 4px 12px rgba(44,95,245,.30);transition:transform var(--duration-fast) var(--ease),box-shadow var(--duration-fast) var(--ease)}
+.quick-add-btn:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(44,95,245,.38)}
+.quick-add-menu{position:fixed;background:var(--surface);border:var(--border-width) solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-pop);padding:var(--space-2);min-width:200px;z-index:401}
+.quick-add-menu button{font-family:inherit;display:block;width:100%;text-align:left;background:none;border:none;padding:var(--space-2) var(--space-3);font-size:var(--text-compact);font-weight:500;border-radius:var(--radius-sm);cursor:pointer;color:var(--text)}
+.quick-add-menu button:hover{background:var(--accent-tint);color:var(--accent-ink)}
+.theme-toggle-btn{width:32px;height:32px;padding:0;border-radius:var(--radius-pill);background:var(--control-bg);border:var(--border-width) solid var(--border-strong);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-family:inherit;transition:background var(--duration-fast) var(--ease),border-color var(--duration-fast) var(--ease),color var(--duration-fast) var(--ease)}
+.theme-toggle-btn:hover{background:var(--accent-tint);border-color:var(--accent-ink);color:var(--accent-ink)}
+.theme-toggle-btn svg{width:16px;height:16px;display:block}
+/* Which glyph shows is derived from data-theme in CSS, not set by JS. That
+   keeps toggleTheme() to one attribute write, and means the no-flash init in
+   <head> renders the correct icon on first paint without JS running at all.
+   Light shows the moon (the action: go dark); dark shows the sun. */
+.theme-toggle-btn .icon-sun{display:none}
+[data-theme="dark"] .theme-toggle-btn .icon-moon{display:none}
+[data-theme="dark"] .theme-toggle-btn .icon-sun{display:block}
+.app-user{display:flex;align-items:center;gap:var(--space-2)}
+.app-user-name{font-size:13px;font-weight:600;white-space:nowrap;color:var(--text)}
+.app-logout{font-family:inherit;background:var(--control-bg);border:var(--border-width) solid var(--border-strong);border-radius:var(--radius-pill);padding:var(--space-2) var(--space-3);font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted);white-space:nowrap}
+.app-logout:hover{color:var(--danger-text);border-color:var(--danger);background:var(--danger-tint)}
+
+.main{padding:var(--space-8) var(--space-6);max-width:1100px;margin:0 auto}
+.main.full-width{max-width:none;padding:var(--space-6)}
+.empty-state{text-align:center;padding:var(--space-24) var(--space-6);color:var(--text-muted)}
+.empty-state-icon{font-size:22px;margin-bottom:var(--space-4);opacity:.5}
+.empty-state-title{font-family:var(--font-display);font-size:24px;font-weight:700;letter-spacing:-.01em;color:var(--text);margin-bottom:var(--space-2)}
+
+/* Dark slate pill, so it reads over any screen without competing with the
+   gradient. Rises as it fades in — the same settle as everything else.
+   translateX is kept in both states so the centring survives the transform. */
+.toast{position:fixed;bottom:var(--space-6);left:50%;transform:translateX(-50%) translateY(10px);background:var(--toast-bg);color:var(--toast-text);padding:var(--space-3) var(--space-6);border-radius:var(--radius-pill);font-size:var(--text-compact);font-weight:600;z-index:999;opacity:0;box-shadow:0 12px 32px rgba(26,34,51,.28);transition:opacity var(--duration) var(--ease),transform var(--duration) var(--ease);pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── shared list/detail/form UI ── */
+.toolbar{display:flex;gap:var(--space-2);align-items:center;margin-bottom:var(--space-4);flex-wrap:wrap}
+/* Form controls carry a 16px bottom margin for stacked forms. Inside a
+   centre-aligned flex toolbar that margin is counted in the control's box, so
+   it rides ~8px high against the pills and buttons beside it. Timesheets is
+   the only screen doing this today (its employee filter), but the mismatch is
+   between two shared components, so it is fixed at that level rather than
+   patched on the one screen. */
+.toolbar .form-select,.toolbar .form-input,.toolbar .form-textarea,.toolbar .status-tabs{margin-bottom:0}
+.search-input{flex:1;min-width:180px;padding:var(--space-2) var(--space-4);border:var(--border-width) solid var(--border-strong);border-radius:var(--radius-pill);font-size:15px;font-family:inherit;background:var(--control-bg);color:var(--text);transition:border-color var(--duration-fast) var(--ease),box-shadow var(--duration-fast) var(--ease)}
+.search-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--focus-ring)}
+
+/* ── Buttons ──
+   The primary action is the screen's gradient moment when nothing larger
+   claims it, so it carries the full signature: gradient + scrim + glow, pill
+   shaped. Secondary stays quiet glass so the primary keeps the eye. */
+.btn-primary{font-family:inherit;background-image:var(--grad-scrim),var(--grad-primary);color:var(--text-on-grad);border:none;border-radius:var(--radius-pill);padding:var(--space-2) var(--space-6);font-size:var(--text-compact);font-weight:600;cursor:pointer;box-shadow:0 6px 16px rgba(44,95,245,.28);transition:transform var(--duration-fast) var(--ease),box-shadow var(--duration-fast) var(--ease)}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 10px 24px rgba(44,95,245,.38)}
+.btn-primary:active{transform:translateY(0);box-shadow:0 4px 10px rgba(44,95,245,.30)}
+.btn-secondary{font-family:inherit;background:var(--control-bg);color:var(--text);border:var(--border-width) solid var(--border-strong);border-radius:var(--radius-pill);padding:var(--space-2) var(--space-4);font-size:var(--text-compact);font-weight:600;cursor:pointer;transition:background var(--duration-fast) var(--ease),border-color var(--duration-fast) var(--ease),color var(--duration-fast) var(--ease)}
+.btn-secondary:hover{background:var(--accent-tint);border-color:var(--accent-ink);color:var(--accent-ink)}
+.btn-link{font-family:inherit;background:none;border:none;color:var(--accent);font-size:var(--text-compact);font-weight:600;cursor:pointer;padding:0}
+.btn-link:hover{text-decoration:underline}
+.btn-danger-link{font-family:inherit;background:none;border:none;color:var(--danger-text);font-size:13px;font-weight:600;cursor:pointer;padding:0}
+.btn-danger-link:hover{text-decoration:underline}
+
+/* Lists are dense and scroll, so they take the cheap near-opaque variant
+   rather than true glass — 200 blurred rows is where this look gets slow. */
+.list-card{background:var(--glass-solid);border:var(--border-width) solid var(--glass-border);border-radius:var(--radius);box-shadow:var(--shadow-card);overflow:hidden}
+.list-row{display:flex;align-items:center;gap:var(--space-4);padding:var(--space-4);border-bottom:var(--border-width) solid var(--border);cursor:pointer;transition:background var(--duration-fast) var(--ease)}
+.list-row:last-child{border-bottom:none}
+.list-row:hover{background:var(--accent-tint)}
+.list-row-name{font-weight:600;font-size:15px;flex:1;min-width:120px}
+/* Service due (and anything else) wraps its whole row in one div that relies
+   on justify-content:space-between to push the actions right. As a lone flex
+   item it defaults to flex:0 1 auto and sizes to its content, so the actions
+   sat next to the text instead of at the row's edge and space-between did
+   nothing. Scoped to :only-child, so rows with real siblings are untouched. */
+.list-row>div:only-child{flex:1;min-width:0}
+.list-row-sub{font-size:13px;color:var(--text-muted)}
+.list-empty{padding:var(--space-16) var(--space-6);text-align:center;color:var(--text-muted)}
+/* A list-card INSIDE a panel is a list, not a floating card — app.js nests
+   them in 8 places (POS parked sales, job detail, PO detail…). Left alone
+   that stacks a translucent card on a translucent card: two borders, two
+   shadows and a muddy double-tint where they overlap. Nested, it drops its
+   own chrome and just holds the rows. Only the outer surface floats. */
+.panel .list-card{background:none;border:none;box-shadow:none;border-radius:0}
+.panel .list-card .list-row:first-child{padding-top:0}
+.panel .list-empty{padding:var(--space-8) var(--space-4)}
+
+.back-link{font-family:inherit;display:inline-flex;align-items:center;gap:var(--space-1);color:var(--text-muted);font-size:13px;font-weight:600;background:none;border:none;cursor:pointer;margin-bottom:var(--space-4)}
+.back-link:hover{color:var(--accent)}
+
+/* Flex, not grid — grid-template-columns doesn't transition reliably across
+   browsers, and this needs to visibly animate: the job/notes cards ease from
+   half-width to a third when a quote/invoice slots in beside them (see
+   .job-invoice-slot below), not just snap. flex-basis DOES transition. */
+.detail-grid{display:flex;gap:var(--space-6);align-items:flex-start}
+.detail-grid>*{flex:1 1 0;min-width:0;transition:flex-basis var(--duration) var(--ease)}
+@media(max-width:800px){.detail-grid{flex-direction:column}.detail-grid>*{width:100%}}
+
+/* Quote/Invoice panel opened inline from a Job Card (see openInvoiceInJob in
+   app.js) — slots in as a third column beside the job/notes cards rather
+   than navigating away, per Dinuka's ask. Kept in its own DOM node (not part
+   of the full-page innerHTML swap) specifically so this animation — and the
+   sibling cards' flex-basis transition above — has a previous state to
+   animate FROM; a full re-render would recreate all three nodes at once with
+   nothing to transition. */
+@keyframes job-invoice-slide-in{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+.job-invoice-slot{animation:job-invoice-slide-in var(--duration) var(--ease) both}
+.job-invoice-slot.exiting{animation:job-invoice-slide-in var(--duration) var(--ease) reverse both}
+/* The workhorse card. True glass — panels are the app's feature surface and
+   there are only ever a handful on screen, so the blur is affordable here. */
+.panel{background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border:var(--border-width) solid var(--glass-border);border-radius:var(--radius);box-shadow:var(--shadow-soft);padding:var(--space-6);transition:transform var(--duration) var(--ease),box-shadow var(--duration) var(--ease)}
+.panel:hover{transform:translateY(-2px);box-shadow:var(--shadow-lift)}
+/* Panels stacked as siblings straight in the main column — Settings does this
+   nine times — drop to the solid variant. Nine live backdrop-filter layers on
+   one scrolling page is the heaviest blur load in the app, and the brief is
+   explicit that true glass is for hero and feature cards, not for a long form
+   page that happens to be made of cards. They also stop lifting: a settings
+   list should not bounce under the pointer as you scan down it.
+   Scoped to DIRECT children of #main, so the two-up .detail-grid panels (job,
+   customer, invoice, POS) keep the glass and stay consistent with each other
+   — they are inside .detail-grid, not children of #main. Report bodies are
+   nested in #report-body and are likewise unaffected. */
+#main>.panel:has(~.panel),#main>.panel~.panel{
+  background:var(--glass-solid);backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:var(--shadow-card)}
+#main>.panel:has(~.panel):hover,#main>.panel~.panel:hover{transform:none;box-shadow:var(--shadow-card)}
+.panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-4)}
+.panel-title{font-family:var(--font-display);font-size:18px;font-weight:700;letter-spacing:-.005em}
+.field-row{display:flex;justify-content:space-between;gap:var(--space-3);padding:var(--space-2) 0;font-size:var(--text-compact);border-bottom:var(--border-width) solid var(--border)}
+.field-row:last-child{border-bottom:none}
+.field-label{color:var(--text-muted)}
+.field-val{font-weight:600;text-align:right}
+
+/* The bottom-line row. app.js emits `field-row grand` in 10 places — customer
+   credit balance, invoice/bill/credit-note totals, report totals — but the
+   only rule for it was scoped to `.invoice-totals`, so nine of those ten
+   rendered as ordinary rows with the emphasis silently dropped. Promoted to a
+   global rule; the invoice-scoped one below now only adds width. */
+.field-row.grand{font-size:17px;font-weight:700;border-bottom:none;border-top:var(--border-width-strong) solid var(--border-strong);margin-top:var(--space-2);padding-top:var(--space-3)}
+.field-row.grand .field-label{color:var(--text);font-weight:700}
+.field-row.grand .field-val{font-size:20px}
+
+/* A few values carry an inline `style="color:var(--success)"` from app.js
+   (positive credit balance, remaining credit). --success is 3.30:1 on white —
+   fine as a fill, a fail as text. Shadowing the custom property here means
+   those inline lookups resolve to the AA-safe twin instead, without editing
+   app.js or resorting to !important. Same for --warning. */
+.field-val,.list-row-sub{--success:var(--success-text);--warning:var(--warning-text)}
+
+.vehicle-card{background:var(--inset-bg);border:var(--border-width) solid var(--border);border-radius:var(--radius-sm);padding:var(--space-3) var(--space-4);margin-bottom:var(--space-2);cursor:pointer;transition:border-color var(--duration-fast) var(--ease),background var(--duration-fast) var(--ease)}
+.vehicle-card:hover{border-color:var(--accent-ink);background:var(--accent-tint)}
+.vehicle-card-title{font-weight:600;font-size:var(--text-compact)}
+.vehicle-card-sub{font-size:13px;color:var(--text-muted);margin-top:2px}
+
+/* Overlay blurs the app behind it rather than just dimming it — the modal is
+   the one place the whole page becomes the frosted layer. */
+.modal-overlay{position:fixed;inset:0;background:var(--modal-overlay);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:500;padding:var(--space-4);animation:fade var(--duration-fast) var(--ease) both}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+/* Solid, not glass: a form floating over a blurred page needs a firm ground
+   or the fields swim. The lift comes from the shadow instead. */
+.modal-card{background:var(--surface);border:var(--border-width) solid var(--glass-border);border-radius:var(--radius);box-shadow:var(--shadow-modal);padding:var(--space-6);max-width:440px;width:100%;max-height:90vh;overflow-y:auto;animation:rise var(--duration) var(--ease) both}
+.modal-title{font-family:var(--font-display);font-size:24px;font-weight:700;letter-spacing:-.01em;margin-bottom:var(--space-4)}
+/* Section divider for long modals (New Stock is the first user) — mirrors
+   MechanicDesk's STOCK / PRICES / STOCK ALERT / SUPPLIER / SPECIFICATION
+   grouping so a long form still reads as distinct, scannable chunks. */
+.modal-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:var(--space-6) 0 var(--space-2);padding-top:var(--space-4);border-top:var(--border-width) solid var(--border)}
+.modal-section-title:first-of-type{margin-top:0;padding-top:0;border-top:none}
+/* Two fields sharing a row (e.g. an excl./incl.-GST pair). */
+.form-row-2{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3)}
+.form-row-2 .form-input,.form-row-2 .form-select{margin-bottom:var(--space-4)}
+/* The read-only computed companion in a live excl./incl. GST pair. */
+.form-input-computed{background:var(--bg-alt);color:var(--text-muted)}
+.form-label{font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--text-muted);margin-bottom:var(--space-1);display:block}
+/* --radius-sm, not the pill: pills are for actions. A pill-shaped text field
+   wastes its horizontal ends and reads as a search box everywhere. */
+.form-input,.form-select,.form-textarea{width:100%;padding:var(--space-3) var(--space-3);border:var(--border-width) solid var(--border-strong);border-radius:var(--radius-sm);font-size:15px;font-family:inherit;margin-bottom:var(--space-4);background:var(--input-bg);color:var(--text);transition:border-color var(--duration-fast) var(--ease),box-shadow var(--duration-fast) var(--ease)}
+.form-textarea{resize:vertical;min-height:60px}
+.form-input:focus,.form-select:focus,.form-textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--focus-ring)}
+.form-actions{display:flex;gap:var(--space-2);justify-content:flex-end;margin-top:var(--space-2)}
+
+/* ── Jobs ─────────────────────────────────────────────────────────────
+   A filter row over a list, and a two-panel detail. No KPI to build a hero
+   from, and inventing one would mean adding markup and a count to app.js —
+   a content change, not a presentation one. So the gradient moment here is
+   the ACTIVE STATUS TAB: top-left, first thing read, and it answers the
+   screen's only real question (which slice of jobs am I looking at).
+   The same idiom carries the gradient on every segmented control in the app,
+   which reads as one system rather than as the rule being broken per screen. */
+.status-tabs{display:flex;gap:var(--space-2);margin-bottom:var(--space-4);flex-wrap:wrap}
+.status-tab{font-family:inherit;background:var(--control-bg);border:var(--border-width) solid var(--border-strong);border-radius:var(--radius-pill);padding:var(--space-2) var(--space-4);font-size:13px;font-weight:600;color:var(--text-muted);cursor:pointer;transition:background var(--duration-fast) var(--ease),color var(--duration-fast) var(--ease),border-color var(--duration-fast) var(--ease)}
+.status-tab:hover:not(.active){background:var(--accent-tint);border-color:var(--accent-ink);color:var(--accent-ink)}
+.status-tab.active{background-image:var(--grad-scrim),var(--grad-primary);color:var(--text-on-grad);border-color:transparent;box-shadow:0 6px 16px rgba(44,95,245,.28)}
+
+/* ── Reports (2026-07-27 redesign) ─────────────────────────────────────
+   Was two stacked rows of pill buttons — a category row, then up to 8 more
+   pills for the reports inside it — plus a third pill-row for the date
+   range. Three different control idioms stacked on top of each other, and
+   switching category hid every other category's reports, so finding a
+   report meant clicking through blind. Replaced with MechanicDesk's own
+   shape (mdweb/workshops/reports): one persistent, grouped nav listing every
+   report at once, current one highlighted, and a single content pane with
+   its own controls. One control idiom, everything discoverable at a glance. */
+.reports-shell{display:flex;align-items:flex-start;gap:var(--space-6)}
+.reports-nav{width:230px;flex-shrink:0;background:var(--glass-solid);border:var(--border-width) solid var(--glass-border);border-radius:var(--radius);box-shadow:var(--shadow-card);padding:var(--space-3);max-height:calc(100vh - 160px);overflow-y:auto;position:sticky;top:var(--space-6)}
+.reports-nav-group{margin-bottom:var(--space-4)}
+.reports-nav-group:last-child{margin-bottom:0}
+.reports-nav-group-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:var(--space-2) var(--space-2) var(--space-1)}
+.reports-nav-link{display:block;width:100%;text-align:left;font-family:inherit;background:none;border:none;border-radius:var(--radius-sm);padding:var(--space-2);margin-bottom:2px;font-size:13px;font-weight:500;color:var(--text);cursor:pointer;transition:background var(--duration-fast) var(--ease),color var(--duration-fast) var(--ease)}
+.reports-nav-link:hover:not(.active){background:var(--accent-tint);color:var(--accent-ink)}
+/* The screen's one gradient moment: the report you're actually looking at,
+   now as a nav row rather than a pill — same signature, new shape. */
+.reports-nav-link.active{background-image:var(--grad-scrim),var(--grad-primary);color:var(--text-on-grad);font-weight:700;box-shadow:0 4px 12px rgba(44,95,245,.24)}
+.reports-content{flex:1;min-width:0}
+.reports-content-title{font-family:var(--font-display);font-size:22px;font-weight:700;letter-spacing:-.005em;margin-bottom:var(--space-4)}
+.reports-toolbar{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;margin-bottom:var(--space-4)}
+.reports-toolbar .form-select,.reports-toolbar .form-input{margin-bottom:0;width:auto}
+.reports-no-range-note{font-size:12px;color:var(--text-muted);margin-bottom:var(--space-4)}
+@media(max-width:900px){
+  .reports-shell{flex-direction:column}
+  .reports-nav{width:100%;position:static;max-height:none}
+}
+@media print{
+  .app-header,.reports-nav,.reports-toolbar{display:none !important}
+  .reports-shell{display:block}
+  .reports-content{width:100%}
+}
+
+/* Badges move from "grey chip with coloured text" to a tinted pill. The text
+   colours switch to the AA-safe twins from step 1: --success at 3.30:1 and
+   --warning at 3.15:1 on white both fail as text, and these are 11px, so
+   they were the worst offenders in the app. The tint keeps the border's job,
+   so the 1px outline goes. */
+.status-badge{display:inline-block;padding:3px var(--space-3);border-radius:var(--radius-pill);font-size:var(--text-micro);font-weight:700;letter-spacing:.02em;white-space:nowrap;border:none;background:var(--bg-alt);color:var(--text-muted)}
+.status-badge.booking{background:var(--accent-tint);color:var(--accent-ink)}
+.status-badge.in_progress{background:var(--warning-tint);color:var(--warning-text)}
+.status-badge.on_hold{background:var(--danger-tint);color:var(--danger-text)}
+.status-badge.finished{background:var(--success-tint);color:var(--success-text)}
+.job-row{display:flex;align-items:center;gap:var(--space-4)}
+.job-row-main{flex:1;min-width:140px}
+.job-row-type{font-weight:600;font-size:15px}
+.job-row-sub{font-size:13px;color:var(--text-muted);margin-top:2px}
+
+.autocomplete{position:relative}
+.autocomplete-list{position:absolute;top:100%;left:0;right:0;background:var(--surface);border:var(--border-width) solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow-pop);max-height:180px;overflow-y:auto;z-index:20;margin-top:var(--space-1);padding:var(--space-1)}
+.autocomplete-item{padding:var(--space-2) var(--space-3);font-size:var(--text-compact);cursor:pointer;border-radius:var(--radius-sm)}
+.autocomplete-item:hover{background:var(--accent-tint);color:var(--accent-ink)}
+.autocomplete-item.create-new{color:var(--accent);font-weight:600;border-top:var(--border-width) solid var(--border);border-radius:0 0 var(--radius-sm) var(--radius-sm)}
+.selected-chip{display:inline-flex;align-items:center;gap:var(--space-2);background:var(--accent-tint);color:var(--accent-ink);border:var(--border-width) solid color-mix(in srgb,var(--accent) 30%,var(--surface));border-radius:var(--radius-pill);padding:var(--space-2) var(--space-4);font-size:var(--text-compact);font-weight:600;margin-bottom:var(--space-4)}
+.selected-chip button{font-family:inherit;background:none;border:none;color:var(--accent);cursor:pointer;font-weight:700}
+
+/* Status ladder on the detail panel. The current step reads as "you are here"
+   rather than as a dead control — v3 used opacity:.4, which on a light surface
+   drops the label to roughly 2:1 and looks broken rather than disabled. It now
+   holds a filled accent tint at full contrast; the disabled attribute is
+   already on the element, so nothing about the interaction changes. */
+.job-status-actions{display:flex;gap:var(--space-2);flex-wrap:wrap;margin-bottom:var(--space-4)}
+.job-status-actions button{font-family:inherit;border:var(--border-width) solid var(--border-strong);background:var(--control-bg);border-radius:var(--radius-pill);padding:var(--space-2) var(--space-4);font-size:13px;font-weight:600;cursor:pointer;color:var(--text);transition:background var(--duration-fast) var(--ease),border-color var(--duration-fast) var(--ease)}
+.job-status-actions button.current{background:var(--accent-tint);border-color:var(--accent-ink);color:var(--accent-ink);cursor:default;opacity:1}
+.job-status-actions button:hover:not(.current){background:var(--accent-tint);border-color:var(--accent-ink);color:var(--accent-ink)}
+
+.notes-thread{margin-top:var(--space-2)}
+.note-item{padding:var(--space-3) 0;border-bottom:var(--border-width) solid var(--border);font-size:var(--text-compact)}
+.note-item:last-child{border-bottom:none}
+.note-meta{color:var(--text-muted);font-size:12px;margin-bottom:3px;display:flex;gap:var(--space-2);align-items:center}
+.note-office-badge{background:var(--warning-tint);color:var(--warning-text);border:none;border-radius:var(--radius-pill);padding:2px var(--space-2);font-size:10px;font-weight:700}
+/* A reply written through the customer portal, not by staff — the one visual
+   cue that closes the "ask a question, get an answer without a call" loop on
+   the staff side. Accent rather than warning: this is a normal, expected
+   event, not something to flag as exceptional the way office-only is. */
+.note-customer-badge{background:var(--accent-tint);color:var(--accent-ink);border:none;border-radius:var(--radius-pill);padding:2px var(--space-2);font-size:10px;font-weight:700}
+.note-input-row{display:flex;gap:var(--space-2);align-items:flex-start;margin-top:var(--space-3)}
+.note-input-row textarea{flex:1;min-height:44px}
+.note-checkbox-row{display:flex;align-items:center;gap:var(--space-1);font-size:12px;color:var(--text-muted);margin:-8px 0 var(--space-2)}
+
+/* ── Diary ─────────────────────────────────────────────────────────────
+   The landing screen and the hardest case for this aesthetic: 7 columns, a
+   card per job, and the whole thing is a drag surface. So the rule from the
+   brief applies at full strength here — NO backdrop-filter anywhere in the
+   diary. Every panel uses --glass-solid or a flat tint. Blurring 7 columns
+   that repaint on every dragover is exactly the case the brief warns about.
+   Depth on this screen comes from soft shadow and layering alone.
+
+   SIGNATURE: today's column header wears --grad-primary. One gradient moment,
+   and it lands on the single most useful thing on the board — where "now" is. */
+.diary-nav{display:flex;align-items:center;gap:var(--space-2);margin-bottom:var(--space-4);flex-wrap:wrap}
+.diary-nav-label{font-family:var(--font-display);font-size:24px;font-weight:700;letter-spacing:-.01em;margin-right:auto}
+.diary-tag-filter{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;margin-bottom:var(--space-4)}
+.diary-tag-filter-label{font-size:12px;font-weight:600;color:var(--text-muted)}
+.diary-grid{display:grid;grid-template-columns:repeat(7,minmax(220px,1fr));gap:var(--space-3);overflow-x:auto;padding-bottom:var(--space-2)}
+.diary-day{background:var(--glass-solid);border:var(--border-width) solid var(--glass-border);border-radius:var(--radius);box-shadow:var(--shadow-card);overflow:hidden;display:flex;flex-direction:column;min-width:220px}
+/* Columns settle in left-to-right on load. Pure CSS — no markup change, so
+   the diary's drag handlers are untouched. */
+.diary-grid>.diary-day{animation:rise var(--duration) var(--ease) both}
+.diary-grid>.diary-day:nth-child(1){animation-delay:0ms}
+.diary-grid>.diary-day:nth-child(2){animation-delay:40ms}
+.diary-grid>.diary-day:nth-child(3){animation-delay:80ms}
+.diary-grid>.diary-day:nth-child(4){animation-delay:120ms}
+.diary-grid>.diary-day:nth-child(5){animation-delay:160ms}
+.diary-grid>.diary-day:nth-child(6){animation-delay:200ms}
+.diary-grid>.diary-day:nth-child(7){animation-delay:240ms}
+.diary-day-header{padding:var(--space-3) var(--space-2);text-align:center;border-bottom:var(--border-width) solid var(--border);font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted)}
+/* The screen's one gradient moment. */
+.diary-day-header.today{background-image:var(--grad-scrim),var(--grad-primary);color:var(--text-on-grad);border-bottom-color:transparent;box-shadow:0 4px 14px rgba(44,95,245,.28)}
+/* onDayBodyClick() fires on any click here that doesn't land on a card or
+   note — empty space included — and opens the add-job/add-note menu, so the
+   whole area needs to read as clickable. .diary-card keeps its own explicit
+   cursor:grab (it's the drag handle) and .day-note-card its own
+   cursor:default, so neither inherits this. */
+.diary-day-body{flex:1;min-height:calc(100vh - 260px);padding:var(--space-2);display:flex;flex-direction:column;gap:var(--space-2);cursor:pointer}
+.diary-day-body.drag-over{background:var(--accent-tint);box-shadow:inset 0 0 0 2px var(--accent)}
+/* Status stays a left bar. Under a 12px radius it reads as a soft tab down
+   the card's edge, which suits this look better than the hard rule did. */
+.diary-card{border:var(--border-width) solid var(--border);border-left:3px solid var(--accent);border-radius:var(--radius-sm);padding:var(--space-3);font-size:13px;cursor:grab;background:var(--surface);box-shadow:var(--shadow-xs);transition:transform var(--duration-fast) var(--ease),box-shadow var(--duration-fast) var(--ease)}
+.diary-card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(44,95,245,.20)}
+.diary-card:active{cursor:grabbing;transform:none;box-shadow:0 2px 6px rgba(26,34,51,.12)}
+.diary-card.booking{background:var(--accent-tint);border-color:color-mix(in srgb,var(--accent) 22%,var(--surface));border-left-color:var(--accent-ink)}
+.diary-card.in_progress{background:var(--warning-tint);border-color:color-mix(in srgb,var(--warning) 22%,var(--surface));border-left-color:var(--warning)}
+.diary-card.on_hold{background:var(--danger-tint);border-color:color-mix(in srgb,var(--danger) 22%,var(--surface));border-left-color:var(--danger)}
+.diary-card.finished{background:var(--success-tint);border-color:color-mix(in srgb,var(--success) 22%,var(--surface));border-left-color:var(--success)}
+.diary-card-time{font-weight:700;font-size:var(--text-compact)}
+.diary-card-type{font-weight:600;font-size:var(--text-compact);margin-top:var(--space-1)}
+.diary-card-sub{color:var(--text-muted);margin-top:3px;font-size:12px;line-height:1.5}
+.diary-card-sub strong{color:var(--text);font-weight:600}
+.diary-card-tags{display:flex;flex-wrap:wrap;gap:var(--space-1);margin-top:var(--space-2)}
+.diary-card-note{margin-top:var(--space-2);padding-top:var(--space-2);border-top:var(--border-width) dashed var(--border);font-size:12px;color:var(--text);line-height:1.4;font-weight:500;overflow-wrap:anywhere}
+/* Reveal animates in rather than popping — --duration-fast because this is a
+   small in-card disclosure the user just asked for, not a page-level entrance
+   (which is what --duration/.rise is reserved for elsewhere). Automatically
+   inert under prefers-reduced-motion via the existing global rule, same as
+   every other animation on the token spine. */
+.diary-card-expanded{margin-top:var(--space-2);padding-top:var(--space-2);border-top:var(--border-width) solid var(--border);cursor:default;animation:rise var(--duration-fast) var(--ease) both}
+.diary-card-expanded-row{display:flex;justify-content:space-between;gap:var(--space-2);font-size:12px;color:var(--text-muted);padding:2px 0}
+.diary-card-expanded-row span:last-child{color:var(--text);text-align:right;font-weight:600}
+.diary-card-expanded-notes-title{font-size:var(--text-micro);font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-top:var(--space-2);margin-bottom:var(--space-1)}
+.diary-card-expanded-note{font-size:12px;color:var(--text);background:var(--inset-bg);border:var(--border-width) solid var(--border);border-radius:var(--radius-sm);padding:var(--space-2);margin-bottom:var(--space-1);overflow-wrap:anywhere;line-height:1.4}
+.diary-card-expanded-empty{font-size:12px;color:var(--text-muted)}
+.diary-card-open-btn{width:100%;margin-top:var(--space-2);font-size:12px;padding:var(--space-2)}
+.return-item-list{max-height:340px;overflow-y:auto;margin-bottom:var(--space-2)}
+.return-item-row{display:grid;grid-template-columns:1fr 70px 160px;gap:var(--space-2);align-items:center;padding:var(--space-2) 0;border-bottom:var(--border-width) solid var(--border)}
+.return-item-row:last-child{border-bottom:none}
+.return-item-desc{font-size:var(--text-compact)}
+.return-item-qty{width:70px}
+.diary-day-empty{padding:var(--space-6) var(--space-2);text-align:center;color:var(--text-muted);font-size:12px}
+.diary-day-body.day-full{background:var(--danger-tint)}
+/* Renders in two places — flush under a column header, and as a standalone
+   banner in the hoist-day nav — so it stays uniformly rounded rather than
+   shaped for either one. */
+.day-full-badge{background:var(--danger);color:var(--on-status);font-size:10px;font-weight:700;text-align:center;padding:var(--space-1) var(--space-2);letter-spacing:.04em;border-radius:var(--radius-sm);margin:0 var(--space-2) var(--space-1)}
+.day-note-card{background:var(--warning-tint);border:var(--border-width) solid color-mix(in srgb,var(--warning) 22%,var(--surface));border-left:3px solid var(--warning);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);font-size:12px;position:relative;cursor:default;white-space:pre-wrap}
+.day-note-card .note-del{position:absolute;top:6px;right:8px;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:12px}
+.day-note-card .note-del:hover{color:var(--danger-text)}
+/* Lives in the hoist-day nav label on the light page background — NOT inside
+   the gradient column header — so it carries its own solid accent fill. */
+.today-tag{background:var(--accent);color:var(--accent-text);font-size:var(--text-micro);font-weight:700;padding:3px var(--space-2);border-radius:var(--radius-pill);vertical-align:middle}
+.diary-view-toggle{display:flex;border:var(--border-width) solid var(--border-strong);border-radius:var(--radius-pill);overflow:hidden;background:var(--control-bg)}
+.diary-view-toggle button{font-family:inherit;background:none;color:var(--text-muted);border:none;padding:var(--space-2) var(--space-4);font-size:13px;font-weight:600;cursor:pointer}
+.diary-view-toggle button.active{background-image:var(--grad-scrim),var(--grad-primary);color:var(--text-on-grad)}
+.diary-view-toggle button+button{border-left:var(--border-width) solid var(--border)}
+.field-warning{background:var(--danger-tint);color:var(--danger-text);border:var(--border-width) solid color-mix(in srgb,var(--danger) 30%,var(--surface));border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);font-size:12px;font-weight:600;margin:-4px 0 var(--space-2)}
+.nj-leg-row{display:flex;gap:var(--space-1);align-items:center;margin-bottom:var(--space-2)}
+.nj-leg-row select{flex:1;min-width:0}
+.nj-leg-row input{width:64px;flex-shrink:0}
+.hoist-stop-tag{background:var(--accent-tint);color:var(--accent-ink);border-radius:var(--radius-pill);padding:1px var(--space-2);font-size:9px;margin-left:var(--space-1);font-weight:700;vertical-align:middle}
+/* SIGNATURE (day view): the "now" line. Not the gradient — this is the one
+   thing on the board that should out-shout everything, and it is semantically
+   an alert, so it keeps --danger and gains a soft glow to carry it. */
+.hoist-now-line{position:absolute;left:0;right:0;height:2px;background:var(--danger);z-index:4;pointer-events:none;box-shadow:0 0 10px rgba(220,38,38,.55)}
+.hoist-now-line::before{content:'';position:absolute;left:-4px;top:-3px;width:8px;height:8px;background:var(--danger);border-radius:var(--radius-pill);box-shadow:0 0 8px rgba(220,38,38,.7)}
+.hoist-now-label{position:absolute;right:2px;transform:translateY(-50%);font-size:10px;font-weight:700;color:var(--on-status);background:var(--danger);padding:1px var(--space-2);border-radius:var(--radius-pill);z-index:4}
+.hoist-block.current-now{outline:var(--border-width-strong) solid var(--accent);outline-offset:1px;z-index:5;box-shadow:0 6px 18px rgba(44,95,245,.32)}
+.hoist-now-badge{display:inline-block;background:var(--danger);color:var(--on-status);font-size:9px;font-weight:700;padding:1px var(--space-2);border-radius:var(--radius-pill);letter-spacing:.04em;vertical-align:middle}
+
+/* ── Diary — Hoist Day view ──
+   Same no-blur rule as the week grid: this is a drag surface with absolutely
+   positioned blocks over a live clock interval. Solid fills only. */
+.hoist-day-wrap{display:flex;gap:var(--space-3);align-items:flex-start;overflow-x:auto;padding-bottom:var(--space-3)}
+.hoist-time-col{display:flex;flex-direction:column;width:48px;flex-shrink:0}
+.hoist-time-labels{position:relative}
+.hoist-time-label{position:absolute;right:4px;transform:translateY(-50%);font-size:var(--text-micro);color:var(--text-muted);white-space:nowrap}
+.hoist-group{display:flex;flex-direction:column}
+.hoist-group-label{font-size:var(--text-micro);font-weight:700;color:var(--text-muted);text-align:center;margin-bottom:var(--space-1);text-transform:uppercase;letter-spacing:.04em;height:16px}
+.hoist-group-cols{display:flex;gap:var(--space-2)}
+.hoist-col{width:150px;flex-shrink:0;display:flex;flex-direction:column;
+  border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow-card)}
+/* Header and lane are a single stacked unit — the header owns the top corners,
+   the lane the bottom — so the pair reads as one rounded column instead of two
+   cards that happen to touch. --radius-none resolving to 20px would otherwise
+   round all four corners of each half. */
+.hoist-col-header{padding:var(--space-2);text-align:center;font-size:12px;font-weight:700;color:var(--text);background:var(--bg-alt);border:var(--border-width) solid var(--glass-border);border-bottom-color:var(--border);border-radius:var(--radius) var(--radius) 0 0}
+.hoist-lane{position:relative;background:var(--glass-solid);border:var(--border-width) solid var(--glass-border);border-top:none;border-radius:0 0 var(--radius) var(--radius)}
+.hoist-lane.drag-over{background-color:var(--accent-tint);box-shadow:inset 0 0 0 2px var(--accent)}
+/* Hour grid — real hairline rules, injected one per hour by renderHoistDayView(). */
+.hoist-hour-rule{position:absolute;left:0;right:0;height:0;border-top:var(--border-width) solid var(--border);pointer-events:none}
+.hoist-block{position:absolute;left:3px;right:3px;border:var(--border-width) solid var(--border);border-left:3px solid var(--accent);border-radius:var(--radius-sm);padding:var(--space-1) var(--space-2);font-size:var(--text-micro);line-height:1.4;overflow:hidden;cursor:grab;background:var(--surface);box-shadow:0 1px 4px rgba(26,34,51,.10);transition:box-shadow var(--duration-fast) var(--ease)}
+.hoist-block:hover{z-index:5;box-shadow:0 8px 20px rgba(44,95,245,.24)}
+.hoist-block.booking{border-left-color:var(--accent)}
+.hoist-block.in_progress{border-left-color:var(--warning)}
+.hoist-block.on_hold{border-left-color:var(--danger)}
+.hoist-block.finished{border-left-color:var(--success)}
+.hoist-block-time{font-weight:700}
+.hoist-block-type{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hoist-block-sub{color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hoist-unassigned{width:200px;flex-shrink:0;display:flex;flex-direction:column}
+.hoist-unassigned-body{background:var(--glass-solid);border:var(--border-width) solid var(--glass-border);border-radius:var(--radius);box-shadow:var(--shadow-card);padding:var(--space-2);display:flex;flex-direction:column;gap:var(--space-2);min-height:120px}
+.hoist-unassigned-body.drag-over{background-color:var(--accent-tint);box-shadow:inset 0 0 0 2px var(--accent)}
+.hoist-unassigned-card{border:var(--border-width) solid var(--border);border-left:3px solid var(--border-strong);border-radius:var(--radius-sm);padding:var(--space-2);font-size:12px;cursor:grab;background:var(--surface);line-height:1.5;box-shadow:var(--shadow-xs);transition:transform var(--duration-fast) var(--ease),box-shadow var(--duration-fast) var(--ease)}
+.hoist-unassigned-card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(44,95,245,.20)}
+
+.day-context-backdrop{position:fixed;inset:0;z-index:400}
+/* Missed in the Diary pass — brought onto the same footing as .quick-add-menu
+   so the app's two popup menus are one component in all but name. */
+.day-context-menu{position:fixed;z-index:401;background:var(--surface);border:var(--border-width) solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-pop);padding:var(--space-2);min-width:200px}
+.day-context-menu button{font-family:inherit;display:block;width:100%;text-align:left;background:none;border:none;padding:var(--space-2) var(--space-3);font-size:var(--text-compact);font-weight:500;border-radius:var(--radius-sm);cursor:pointer;color:var(--text)}
+.day-context-menu button:hover{background:var(--accent-tint);color:var(--accent-ink)}
+.day-context-menu button.danger{color:var(--danger-text)}
+.day-context-menu button.danger:hover{background:var(--danger-tint);color:var(--danger-text)}
+.day-context-menu .locked-note{padding:var(--space-2) var(--space-3);font-size:12px;color:var(--text-muted)}
+
+/* ── Tags (chip color is user data; container is squared) ── */
+.tag-chip{display:inline-flex;align-items:center;gap:var(--space-1);padding:3px var(--space-2);border-radius:var(--radius-pill);font-size:var(--text-micro);font-weight:700;color:#fff}
+.tag-chip button{font-family:inherit;background:none;border:none;color:inherit;opacity:.8;cursor:pointer;font-size:var(--text-micro);line-height:1;padding:0}
+.tag-chip button:hover{opacity:1}
+/* A dot, so it needs the pill radius — --radius-input resolving to 12px would
+   leave an 8px square with a radius bigger than the element. */
+.tag-dot{display:inline-block;width:8px;height:8px;border-radius:var(--radius-pill);flex-shrink:0}
+.tag-section{margin-top:var(--space-4)}
+.tag-list{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-bottom:var(--space-2)}
+/* Also missed in the Jobs pass (the tag picker opens from the job detail). */
+.tag-picker{border:var(--border-width) solid var(--border);border-radius:var(--radius-sm);padding:var(--space-3);margin-top:var(--space-2);background:var(--control-bg)}
+.tag-picker-existing{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-bottom:var(--space-2)}
+.tag-option{display:inline-flex;align-items:center;gap:var(--space-2);padding:var(--space-1) var(--space-3);border-radius:var(--radius-pill);font-size:12px;font-weight:600;cursor:pointer;background:var(--control-bg);border:var(--border-width) solid var(--border-strong);transition:border-color var(--duration-fast) var(--ease),background var(--duration-fast) var(--ease)}
+.tag-option:hover{border-color:var(--accent-ink);background:var(--accent-tint)}
+.tag-create-row{display:flex;gap:var(--space-2);align-items:center;border-top:var(--border-width) solid var(--border);padding-top:var(--space-2);margin-top:var(--space-1)}
+.tag-create-row input[type=text]{flex:1;padding:var(--space-2) var(--space-3);border:var(--border-width) solid var(--border-strong);border-radius:var(--radius-sm);font-size:13px;font-family:inherit;background:var(--surface);color:var(--text)}
+.tag-create-row input[type=text]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--focus-ring)}
+.tag-create-row input[type=color]{width:38px;height:36px;padding:2px;border:var(--border-width) solid var(--border-strong);border-radius:var(--radius-sm);cursor:pointer;background:none}
+
+/* ── Invoices ── */
+/* Colour-only alignment with the tinted-pill badge restyled in the Jobs pass.
+   Carried across early rather than left for the Invoices pass because these
+   override the shared base: left alone they would keep the grey fill and the
+   raw --warning/--success text that fail AA at 11px. The Invoices screen
+   itself is still untouched. */
+.status-badge.draft{background:var(--bg-alt);color:var(--text-muted)}
+.status-badge.sent{background:var(--warning-tint);color:var(--warning-text)}
+.status-badge.paid{background:var(--success-tint);color:var(--success-text)}
+.status-badge.approved{background:var(--success-tint);color:var(--success-text)}
+.status-badge.declined{background:var(--danger-tint);color:var(--danger-text)}
+/* Dense editable grid — shared by the payments breakdown and the invoice
+   detail, so it is restyled once here. Deliberately quiet: rounded inputs and
+   a tinted header strip, no glass and no gradient. Nothing about a row of
+   number fields is improved by translucency, and the eye needs to land on the
+   totals, not on the table. The wrap scrolls horizontally on its own so the
+   page body never does. */
+.invoice-items-wrap{overflow-x:auto;border-radius:var(--radius-sm)}
+.invoice-items-table{width:100%;border-collapse:separate;border-spacing:0;margin:var(--space-4) 0}
+.invoice-items-table th{text-align:left;font-size:var(--text-micro);text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:700;padding:var(--space-3) var(--space-2);background:var(--bg-alt);border-bottom:var(--border-width) solid var(--border);white-space:nowrap}
+.invoice-items-table th:first-child{border-radius:var(--radius-sm) 0 0 0}
+.invoice-items-table th:last-child{border-radius:0 var(--radius-sm) 0 0}
+.invoice-items-table td{padding:var(--space-2);font-size:var(--text-compact);border-bottom:var(--border-width) solid var(--border);vertical-align:middle}
+.invoice-items-table input,.invoice-items-table select{width:100%;padding:var(--space-2);border:var(--border-width) solid var(--border-strong);border-radius:var(--radius-sm);font-size:13px;font-family:inherit;background:var(--surface);color:var(--text);transition:border-color var(--duration-fast) var(--ease),box-shadow var(--duration-fast) var(--ease)}
+.invoice-items-table input:focus,.invoice-items-table select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--focus-ring)}
+.invoice-items-table .qty-col,.invoice-items-table .price-col{width:90px}
+.invoice-items-table .total-col{width:100px;text-align:right;font-weight:700}
+.invoice-items-table .tax-col{width:140px}
+.invoice-items-table tr.clickable-row{cursor:pointer}
+.invoice-items-table tr.clickable-row:hover{background:var(--accent-tint)}
+/* SIGNATURE (Payments): the method-share bars. This is the one place in the
+   app with an actual chart, so the gradient goes here rather than on a tab —
+   raw --grad-primary, no scrim, because no text sits on these. Rounded caps
+   on both the track and the fill, and the fill keeps its own radius so a 3%
+   sliver still reads as a rounded bar rather than a sharp splinter. */
+.payment-method-row{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) 0}
+.payment-method-label{width:150px;font-size:var(--text-compact);font-weight:600;flex-shrink:0}
+.payment-method-bar-wrap{flex:1;background:var(--bg-alt);border:none;border-radius:var(--radius-pill);height:10px;overflow:hidden}
+.payment-method-bar{display:block;height:100%;background-image:var(--grad-primary);border-radius:var(--radius-pill);box-shadow:0 2px 8px rgba(44,95,245,.32)}
+.payment-method-amount{width:100px;text-align:right;font-size:var(--text-compact);font-weight:700;flex-shrink:0}
+.payment-method-pct{width:44px;text-align:right;font-size:13px;color:var(--text-muted);flex-shrink:0}
+.invoice-items-table .del-col{width:32px;text-align:center}
+/* SIGNATURE (invoice / quote detail): the totals block. It is already a
+   self-contained container in the markup, and Balance Due is unambiguously
+   the number the whole screen exists to show — so it becomes the gradient
+   card rather than a tab or a button carrying the moment.
+   Every descendant colour is re-stated because the shared .field-row rules
+   assume a light surface: muted labels and hairline rules would both vanish. */
+.invoice-totals{margin-left:auto;max-width:320px;background-image:var(--grad-scrim),var(--grad-primary);color:var(--text-on-grad);border-radius:var(--radius);box-shadow:var(--shadow-soft);padding:var(--space-4) var(--space-6)}
+.invoice-totals .field-row{border-bottom-color:rgba(255,255,255,.22)}
+/* POS puts editable discount inputs inside this card, styled inline in app.js
+   with `border:1px solid var(--border)` — a dark hairline at 9% opacity, which
+   all but disappears against the gradient. Shadowing --border here re-points
+   that inline lookup at a light border without touching app.js. The field-row
+   rule above sets its own longhand colour, so it is unaffected. */
+.invoice-totals{--border:var(--inset-bg)}
+/* Mode-independent on purpose. This field sits ON --grad-primary, and the
+   gradient is identical in light and dark, so what sits on it must be too —
+   var(--text) would go near-white in dark and vanish into the white field. */
+.invoice-totals input{background:#FFFFFF;color:#1A2233}
+/* Full white, not a dimmed white: on the azure end of the gradient even 90%
+   white only reaches 4.3:1, so hierarchy here is carried by weight and size
+   rather than opacity. Labels 500, values 700 — both at the full 4.77:1. */
+.invoice-totals .field-label{color:var(--text-on-grad);font-weight:500}
+.invoice-totals .field-val{color:var(--text-on-grad);font-weight:700}
+.invoice-totals .field-row.grand{border-top-color:rgba(255,255,255,.45)}
+.invoice-totals .field-row.grand .field-label{color:var(--text-on-grad);font-weight:700}
+/* Now redundant with the global .field-row.grand rule — kept as an empty
+   anchor would be worse than removing it, so it's gone. The Invoices pass
+   owns whatever this screen needs beyond the shared total row. */
+/* NOTE: this component belongs to SETTINGS (renderSettingsPage), not Invoices
+   — it is only filed in this block because it previews an invoice template.
+   Completed in the Settings pass.
+   The preview itself is a miniature of a PRINT document, so it deliberately
+   stays flat and near-square while everything around it is soft: glass or a
+   gradient here would misrepresent what the customer actually receives. The
+   CARD around it is themed; the paper inside it is not. */
+.template-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:var(--space-4);margin-top:var(--space-4)}
+.template-option-card{border:var(--border-width) solid var(--border-strong);border-radius:var(--radius-sm);padding:var(--space-4);cursor:pointer;background:var(--surface);transition:border-color var(--duration-fast) var(--ease),box-shadow var(--duration-fast) var(--ease)}
+.template-option-card:hover{border-color:var(--accent);box-shadow:0 6px 18px rgba(44,95,245,.18)}
+/* Selected state can't rest on the border alone — a 1px colour change is the
+   weakest possible "this is the one you chose" on a two-card grid. */
+.template-option-card.selected{border-color:var(--accent-ink);background:var(--accent-tint);box-shadow:0 0 0 2px var(--accent),0 8px 22px rgba(44,95,245,.22)}
+/* Also mode-independent: this is a miniature of a PRINTED page, and printed
+   pages are white in both themes (see the @media print block and the template
+   carve-out). Its internals are pinned to literals rather than tokens so a
+   dark flip can't turn the "paper" into an ink rectangle or fade the
+   skeleton lines into it. */
+.template-preview{height:100px;border-radius:6px;margin-bottom:var(--space-2);display:flex;flex-direction:column;overflow:hidden;border:var(--border-width) solid #D8DBE2;background:#FFFFFF}
+.template-preview .band{height:24px}
+.template-preview .lines{flex:1;padding:var(--space-2);display:flex;flex-direction:column;gap:var(--space-1)}
+.template-preview .lines div{height:5px;background:#C3C8D2;border-radius:2px}
+.template-preview.compact .lines div{height:4px}
+
+/* ── Messages ─────────────────────────────────────────────────────────
+   A sent-log over a compose modal. The channel marker becomes a tinted pill
+   rather than 34px of grey uppercase text.
+   Email and SMS share one tint: app.js emits the channel as text content
+   ("Email" / "SMS") with no modifier class, and CSS cannot select on text, so
+   colouring them apart would need an app.js change — out of scope for a
+   presentation pass. Worth doing later; noted rather than faked.
+   SIGNATURE: the config banner (below) when messaging is connected. */
+.message-row{display:flex;align-items:flex-start;gap:var(--space-3)}
+.message-channel-icon{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;flex-shrink:0;margin-top:1px;width:auto;min-width:46px;text-align:center;padding:3px var(--space-2);border-radius:var(--radius-pill);background:var(--accent-tint);color:var(--accent-ink)}
+.message-row-main{flex:1;min-width:0}
+.message-row-to{font-weight:600;font-size:var(--text-compact)}
+.message-row-subject{font-size:var(--text-compact);font-weight:500;margin-top:2px}
+.message-row-preview{font-size:13px;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.message-row-links{font-size:12px;color:var(--text-muted);margin-top:var(--space-1);display:flex;gap:var(--space-2);flex-wrap:wrap}
+.message-row-time{font-size:12px;color:var(--text-muted);white-space:nowrap;text-align:right;flex-shrink:0}
+/* Same colour-only alignment as the invoice badges — see the note there. */
+.status-badge.queued{background:var(--bg-alt);color:var(--text-muted)}
+.status-badge.failed{background:var(--danger-tint);color:var(--danger-text)}
+/* SIGNATURE: the connected banner. It sits at the top of the screen and is
+   the first thing read, so the "all good" state wears the gradient — the one
+   moment on a screen that is otherwise a plain log. The warn state
+   deliberately does NOT: a problem should read as a problem, so it keeps the
+   flat warning tint and gets the emphasis from colour, not shine.
+   The warn text uses the AA-safe twin — raw --warning at 13px is 3.15:1 and
+   would fail. The ok state is white on gradient+scrim at 4.77:1. */
+.message-config-banner{border-radius:var(--radius);padding:var(--space-3) var(--space-4);font-size:13px;font-weight:600;margin-bottom:var(--space-4);border:var(--border-width) solid transparent}
+.message-config-banner.ok{background-image:var(--grad-scrim),var(--grad-primary);color:var(--text-on-grad);box-shadow:var(--shadow-soft)}
+.message-config-banner.warn{background:var(--warning-tint);color:var(--warning-text);border-color:color-mix(in srgb,var(--warning) 30%,var(--surface))}
+.compose-channel-toggle{display:flex;gap:var(--space-2);margin-bottom:var(--space-4)}
+.compose-channel-toggle button{font-family:inherit;flex:1;border:var(--border-width) solid var(--border-strong);background:var(--control-bg);border-radius:var(--radius-pill);padding:var(--space-2) var(--space-4);font-size:var(--text-compact);font-weight:600;cursor:pointer;color:var(--text-muted);transition:background var(--duration-fast) var(--ease),color var(--duration-fast) var(--ease),border-color var(--duration-fast) var(--ease)}
+.compose-channel-toggle button:hover:not(.active){background:var(--accent-tint);border-color:var(--accent-ink);color:var(--accent-ink)}
+/* Solid accent, not the gradient: this toggle lives inside the compose modal,
+   where the primary Send button already carries the gradient. Two gradients
+   in one small dialog would read as decoration rather than emphasis. */
+.compose-channel-toggle button.active{background:var(--accent);color:var(--accent-text);border-color:var(--accent);box-shadow:0 4px 12px rgba(44,95,245,.24)}
+.compose-sms-count{font-size:12px;color:var(--text-muted);text-align:right;margin:-10px 0 var(--space-4);font-variant-numeric:tabular-nums}
+
+@media(max-width:900px){
+  .app-header{grid-template-columns:auto 1fr;grid-template-areas:"logo right" "nav nav"}
+  .app-logo{grid-area:logo}
+  .app-right{grid-area:right}
+  .app-nav{grid-area:nav;justify-self:stretch}
+}
+@media(max-width:520px){
+  .app-user-name{display:none}
+}
+</style>
+</head>
+<body>
+
+<div class="login-page" id="login-page">
+  <div class="login-card">
+    <div class="login-logo">DHF</div>
+    <div class="login-title">DHF Desk</div>
+    <div class="login-sub">Sign in with your DHF Tyres account.</div>
+    <div id="g_id_onload"
+         data-client_id="992833623399-s28cqha40ho2f4s2mvihskiicngb3g5e.apps.googleusercontent.com"
+         data-auto_prompt="false"
+         data-callback="handleGoogleSignIn">
+    </div>
+    <!-- data-theme here is Google's own widget attribute, unrelated to the
+         app's theme flag. Both values are set by the v4 theme, not inherited:
+         filled_black was chosen to avoid punching a white card into the dark
+         v3 panel, and now reads as a black slab on light glass — filled_blue
+         is the nearest GSI variant to --accent. data-shape follows the
+         rounded rule the same way. Google renders the widget in a
+         cross-origin iframe, so these attributes are the only styling reach
+         we have into it; our CSS cannot touch it. -->
+    <div class="g_id_signin" data-type="standard" data-theme="filled_blue" data-size="large" data-text="sign_in_with" data-shape="pill" data-width="280"></div>
+    <div class="login-domain">Restricted to @dhftyres.com.au accounts.</div>
+  </div>
+</div>
+
+<div class="app" id="app">
+  <div class="app-header">
+    <div class="app-logo">DHF Desk</div>
+    <div class="app-nav" id="app-nav">
+      <button data-view="diary" class="active" onclick="switchView('diary')">Diary</button>
+      <button data-view="jobs" onclick="switchView('jobs')">Jobs</button>
+      <button data-view="customers" onclick="switchView('customers')">Customers &amp; vehicles</button>
+      <button data-view="invoices" onclick="switchView('invoices')">Invoices</button>
+      <button data-view="messages" onclick="switchView('messages')">Messages</button>
+      <button data-view="inventory" onclick="switchView('inventory')">Inventory</button>
+      <button data-view="supplier-stock" onclick="switchView('supplier-stock')">Supplier Stock</button>
+      <button data-view="pos" onclick="switchView('pos')">POS</button>
+      <button data-view="service-schedule" onclick="switchView('service-schedule')">Service due</button>
+      <button data-view="timesheets" onclick="switchView('timesheets')">Timesheets</button>
+      <button data-view="pipeline" onclick="switchView('pipeline')">Sales projection</button>
+      <button data-view="reports" onclick="switchView('reports')">Reports</button>
+      <button data-view="settings" onclick="switchView('settings')">Settings</button>
+    </div>
+    <div class="app-right">
+      <div class="app-quick">
+        <div class="quick-search-wrap">
+          <!-- Fixed-size trigger only. The real input and results live in a
+               fixed-position overlay injected by openQuickSearchPanel() —
+               see the note on .search-palette-backdrop for why. -->
+          <button type="button" class="quick-search-trigger" onclick="openQuickSearchPanel()" title="Search (Ctrl+K)" aria-label="Search">
+            <span aria-hidden="true">🔍</span><span class="quick-search-trigger-label">Search</span><span class="quick-search-kbd" aria-hidden="true">Ctrl K</span>
+          </button>
+        </div>
+        <button class="quick-add-btn" onclick="toggleQuickAddMenu(event)" title="Create">+</button>
+      </div>
+      <button class="theme-toggle-btn" id="theme-toggle-btn" onclick="toggleTheme()" title="Toggle dark mode" aria-label="Toggle dark mode">
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </button>
+      <div class="app-user">
+        <span class="app-user-name" id="header-name"></span>
+        <button class="app-logout" onclick="handleLogout()">Sign out</button>
+      </div>
+    </div>
+  </div>
+  <div class="main" id="main"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="app.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCOX5HVSFPX_4ktHAZA_wtWrw5WwQLn38s&libraries=places&loading=async" async defer></script>
+</body>
+</html>
