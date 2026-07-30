@@ -3860,6 +3860,12 @@ async function createDocFromJob(jobId,docType){
 // design-brief.md; if the accent is rebranded, update ACCENT below.
 function buildInvoiceHtml(inv,items,template){
   const {rawTotal,discountAmount,totalIncl,gst,exclSubtotal}=calcInvoiceTotals(items,inv.discount_type,inv.discount_value);
+  // Compute per-header subtotals for section headers in the print template.
+  let curHdr=null; const hdrTotals={};
+  items.forEach(it=>{
+    if(it.is_header){curHdr=it.id;hdrTotals[it.id]=0}
+    else if(curHdr)hdrTotals[curHdr]=(hdrTotals[curHdr]||0)+(Number(it.qty)||0)*(Number(it.unit_price)||0);
+  });
   const docLabel=inv.doc_type==='quote'?'Quote':'Invoice';
   const docRef=`${docPrefix(inv.doc_type)}-${inv.invoice_no}`;
   const vehDesc=inv.vehicle?[inv.vehicle.make,inv.vehicle.model].filter(Boolean).join(' ')+(inv.vehicle.rego?' ('+inv.vehicle.rego+')':''):'';
@@ -3883,7 +3889,7 @@ function buildInvoiceHtml(inv,items,template){
   if(template==='aurora'){
     const GRAD='linear-gradient(135deg,rgba(10,16,48,.22) 0%,rgba(10,16,48,.06) 100%),linear-gradient(135deg,#1F90F7 0%,#2C5FF5 45%,#6D5FFF 100%)';
     const FJ="'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
-    const rowsA=items.map(it=>it.is_header?`<tr><td colspan="4" style="padding:16px 0 8px 0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6B7280;border-bottom:1px solid rgba(26,34,51,.09)">${esc(it.description)}</td></tr>`:`<tr>
+    const rowsA=items.map(it=>it.is_header?`<tr><td colspan="4" style="padding:16px 0 8px 0;border-bottom:1px solid rgba(26,34,51,.09)"><div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6B7280">${esc(it.description)}</span><span style="font-size:14px;font-weight:700;color:#1A2233;${NUM}">$${hdrTotals[it.id].toFixed(2)}</span></div></td></tr>`:`<tr>
       <td style="padding:13px 8px 13px 0;border-bottom:1px solid rgba(26,34,51,.06);font-size:14px;color:#1A2233;vertical-align:top">${esc(it.description)}</td>
       <td style="padding:13px 8px;border-bottom:1px solid rgba(26,34,51,.06);font-size:14px;color:#1A2233;text-align:right;vertical-align:top;${NUM}">${it.qty}</td>
       <td style="padding:13px 8px;border-bottom:1px solid rgba(26,34,51,.06);font-size:14px;color:#1A2233;text-align:right;vertical-align:top;${NUM}">$${Number(it.unit_price).toFixed(2)}</td>
@@ -3959,7 +3965,7 @@ function buildInvoiceHtml(inv,items,template){
   }
 
   if(template==='compact'){
-    const rowsC=items.map(it=>it.is_header?`<tr><td colspan="4" style="padding:14px 0 6px 0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${MUTED};border-bottom:1px solid ${BORDER_STRONG}">${esc(it.description)}</td></tr>`:`<tr>
+    const rowsC=items.map(it=>it.is_header?`<tr><td colspan="4" style="padding:14px 0 6px 0;border-bottom:1px solid ${BORDER_STRONG}"><div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${MUTED}">${esc(it.description)}</span><span style="font-size:14px;font-weight:700;color:${INK};${NUM}">$${hdrTotals[it.id].toFixed(2)}</span></div></td></tr>`:`<tr>
       <td style="padding:8px 8px 8px 0;border-bottom:1px solid ${BORDER};font-size:13px;line-height:1.5;color:${INK};vertical-align:top">${esc(it.description)}</td>
       <td style="padding:8px;border-bottom:1px solid ${BORDER};font-size:13px;color:${INK};text-align:right;${NUM}">${it.qty}</td>
       <td style="padding:8px;border-bottom:1px solid ${BORDER};font-size:13px;color:${INK};text-align:right;${NUM}">$${Number(it.unit_price).toFixed(2)}</td>
@@ -3996,7 +4002,7 @@ function buildInvoiceHtml(inv,items,template){
 </body></html>`;
   }
 
-  const rows=items.map(it=>it.is_header?`<tr><td colspan="4" style="padding:16px 0 8px 0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${MUTED};border-bottom:1px solid ${BORDER_STRONG}">${esc(it.description)}</td></tr>`:`<tr>
+  const rows=items.map(it=>it.is_header?`<tr><td colspan="4" style="padding:16px 0 8px 0;border-bottom:1px solid ${BORDER_STRONG}"><div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${MUTED}">${esc(it.description)}</span><span style="font-size:14px;font-weight:700;color:${INK};${NUM}">$${hdrTotals[it.id].toFixed(2)}</span></div></td></tr>`:`<tr>
     <td style="padding:12px 8px 12px 0;border-bottom:1px solid ${BORDER};font-size:15px;line-height:1.55;color:${INK};vertical-align:top">${esc(it.description)}</td>
     <td style="padding:12px 8px;border-bottom:1px solid ${BORDER};font-size:15px;color:${INK};text-align:right;vertical-align:top;${NUM}">${it.qty}</td>
     <td style="padding:12px 8px;border-bottom:1px solid ${BORDER};font-size:15px;color:${INK};text-align:right;vertical-align:top;${NUM}">$${Number(it.unit_price).toFixed(2)}</td>
