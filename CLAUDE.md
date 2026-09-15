@@ -19,12 +19,20 @@ on https://trello.com/b/8pYZKWmY (board "DHF Desk"), with labels and a checklist
   - Can't sign into the app: staff login is limited to `@dhftyres.com.au` plus `dushentissera@gmail.com`
 - **The repo is PUBLIC.** Whether to make it private is an open P0 decision.
 
+> ⚠️ **BLOCKER: the live site is NOT this repo.** Production (https://dhf-desk.netlify.app) runs newer code than GitHub `master` (checked 2026-09-15).
+> - app.js is 9,532 lines live vs 8,244 here, and index.html, staff.html, portal.html and manifest.json all differ.
+> - Live-only features: hash routing, Chats view, check sheets, job-type item templates, supplier cost requests, delete customer, finish-job-with-checklist, `fetchAllRows` paging.
+> - Prod is probably deployed manually from Dinuka's local folder.
+> - **Don't deploy anything built from this repo** until his source is committed (Trello: https://trello.com/c/wyAVp8FI).
+> - The code map and line numbers below describe the **GitHub** version.
+
 ## What the app is
 
 A MechanicDesk-style workshop management system: diary/hoist scheduling, jobs, customers and vehicles, quotes/invoices/payments, POS, inventory/suppliers/POs, bills, credit notes, timesheets, service reminders, supplier stock, reports, email/SMS.
 
 - **Stack:** plain HTML + vanilla JS. No framework, no build step, no `package.json`, no tests, no CI.
-- **Hosting:** Netlify static site (`deploy.sh` runs `netlify deploy --prod`; `_headers` sets the CSP and security headers).
+- **Hosting:** Netlify static site at **https://dhf-desk.netlify.app** (`deploy.sh` runs `netlify deploy --prod`; `_headers` sets the CSP and security headers).
+  - Live checks on 2026-09-15: HSTS preload and CSP are set; `/deploy.sh`, `/.claude/`, `/.git/` and `/CLAUDE.md` return 404.
 - **Backend:** Supabase project `cztpumgrvhmcvvpqbfqo`, called straight from the browser with the publishable key.
   - **RLS is the only real access control.** Helpers: `is_desk_user()` / `is_desk_admin()`.
 - **Shared project:** the same Supabase project also serves other modules. app.js reads the CRM `leads` table and calls the Hub's `validate_hub_token`.
@@ -144,17 +152,19 @@ Rules this plan implies from day one:
 
 ## Known issues (all on Trello, Backlog)
 
+Issues 1–4 and 6–9 were also confirmed present in the **live** code on 2026-09-15.
+
 | # | Issue | Where | Labels |
 |---|---|---|---|
 | 1 | Multi-day diary bar click calls `openJobFromDiary(event,id)`, which takes one argument, so it's broken | `app.js:7902` | Bug |
 | 2 | Multi-day detection compares UTC `slice(0,10)` dates → same-day jobs before ~10am show as multi-day; bars overlap (fixed `top:56px`); jobs that started last week don't show | `app.js:7888`, `7925` | Bug |
 | 3 | `toDateInputValue` uses UTC → "today" is yesterday before 10–11am; weeks start Saturday | `app.js:4127` | Bug, Data integrity |
 | 4 | Quote→invoice drops `is_header`, `sort_order`, `tax_type`, discount, `order_no` | `app.js:3558` | Bug, Data integrity |
-| 5 | Creating a job from the Diary lands on the Jobs list with the Diary tab still highlighted | `app.js:7351` | Bug |
+| 5 | Creating a job from the Diary lands on the Jobs list with the Diary tab still highlighted (**already fixed live**, not yet in GitHub) | `app.js:7351` | Bug |
 | 6 | Multi-step saves aren't atomic (new job, POS, apply credit, receive PO, returns); stock uses read-modify-write on cached qty | various | Data integrity, Tech debt |
 | 7 | Deleting a payment doesn't un-pay the invoice; several totals ignore discount/headers | `app.js:3546`, `2858`, `1028` | Bug, Data integrity |
 | 8 | `esc()` doesn't escape quotes but is used in attributes/`onclick` → broken markup/XSS | `app.js:338` (+ portal/staff) | Security |
-| 9 | Diary/Jobs/Reports load whole tables (all notes, all invoices); PostgREST caps responses at 1,000 rows | `app.js:6198`, `4749` | Tech debt/Performance |
+| 9 | Diary/Jobs/Reports load whole tables (all notes, all invoices); PostgREST caps responses at 1,000 rows (live code now pages with `fetchAllRows`, but still loads everything) | `app.js:6198`, `4749` | Tech debt/Performance |
 
 Also on the board:
 - Maps API key restriction check (Security, needs Dinuka)
