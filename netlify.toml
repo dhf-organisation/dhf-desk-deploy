@@ -1,0 +1,21 @@
+# Netlify build config for DHF Desk (site "dhf-desk").
+#
+# Why this exists: Netlify auto-publishes `master` to production, and without
+# this file it published the whole repo root, so deploy.sh (and anything
+# else committed at the root, e.g. CLAUDE.md) became public on the live site.
+#
+# The app has no build step. The "build" just copies an explicit ALLOWLIST of
+# app files into dist/ and publishes only that folder. It's an allowlist on
+# purpose: a new doc or script added to the repo can never leak by default.
+#
+# ⚠️ Adding a new file the site must serve (page, stylesheet, script, image)?
+#    Add it to the `cp` list below, or it won't be deployed. A missing listed
+#    file fails the build (cp exits non-zero), so nothing half-broken ships.
+#
+# Settings here override the Netlify UI and apply to production, branch
+# deploys and deploy previews alike. `_headers` must be copied into dist/ for
+# the CSP/security headers to keep applying.
+
+[build]
+  publish = "dist"
+  command = "rm -rf dist && mkdir dist && cp index.html app.js portal.html staff.html crm.html tokens.css manifest.json _headers dist/"
