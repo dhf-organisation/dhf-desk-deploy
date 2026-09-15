@@ -22,9 +22,18 @@ on https://trello.com/b/8pYZKWmY (board "DHF Desk"), with labels and a checklist
 > ⚠️ **BLOCKER: the live site is NOT this repo.** Production (https://dhf-desk.netlify.app) runs newer code than GitHub `master` (checked 2026-09-15).
 > - app.js is 9,532 lines live vs 8,244 here, and index.html, staff.html, portal.html and manifest.json all differ.
 > - Live-only features: hash routing, Chats view, check sheets, job-type item templates, supplier cost requests, delete customer, finish-job-with-checklist, `fetchAllRows` paging.
-> - Prod is probably deployed manually from Dinuka's local folder.
-> - **Don't deploy anything built from this repo** until his source is committed (Trello: https://trello.com/c/wyAVp8FI).
-> - The code map and line numbers below describe the **GitHub** version.
+> - Live source: `/home/dinuka/AI/dhf-desk-deploy` on Dinuka's Linux machine. Not a git repo, no history.
+> - Netlify site ID `c72c0d97-fae8-4980-b052-85e55879375d`. Deploys go through `netlify deploy --prod`, but the actual trigger is unknown.
+> - **Sync in progress:** PR #2 (https://github.com/dinuka-dhf/dhf-desk-deploy/pull/2) adds the live source plus `tokens.css` and `crm.html`, which the live site also serves.
+>   - Verified 2026-09-15: 6 of 7 files are byte-identical to the live site.
+>   - `crm.html` differs only in its 2 "Back to Desk" links (live `href='/'`).
+> - **Don't deploy anything built from this repo** until PR #2 is merged (Trello: https://trello.com/c/wyAVp8FI).
+> - The code map and line numbers below describe the **old GitHub** version. Refresh them after PR #2 merges.
+>
+> **Also from Dinuka's audit (2026-09-15):**
+> - **2026-09-08 outage:** a production deploy containing only `crm.html` wiped the whole site twice. The cause hasn't been traced (https://trello.com/c/3xDKPwIq).
+> - A Netlify auth token is hard-coded in `dhf-crm/dhf-crm-handoff/deploy-crm.sh` and needs rotating (https://trello.com/c/HNmU2LmB).
+> - Sibling apps on the same Supabase project, none in git: dhf-hub, dhf-crm, dhf-shareholder-meetings, dhf-shareholder-tracker (https://trello.com/c/0y3LC9QR).
 
 ## What the app is
 
@@ -47,9 +56,12 @@ A MechanicDesk-style workshop management system: diary/hoist scheduling, jobs, c
 
 ### Not in this repo (live elsewhere, must be recovered)
 
-- DB schema, migrations (`migration-customer-portal.sql`, `migration-staff-app.sql`, …), RLS policies, triggers (`desk_credit_application_guard`), RPCs (`desk_send_email`, `desk_send_sms`, `desk_messaging_status`)
-- `design-brief.md`, which the CSS comments cite
-- The **supplier-stock scraper**: Playwright, runs from cron on Dinuka's personal machine using the **service-role key**. Scrapes Tempe Tyres + Newbee Tyre into `desk_supplier_stock`, using sizes from `desk_tracked_tyre_sizes`.
+- DB schema, migrations, RLS policies, triggers (`desk_credit_application_guard`), RPCs (`desk_send_email`, `desk_send_sms`, `desk_messaging_status`).
+  - The 13 original `migration-*.sql` files are at `/home/dinuka/AI/dhf-desk-docs/` on Dinuka's machine.
+  - Don't commit them to this public repo until the visibility decision is made.
+- `design-brief.md` (plus `design-brief v3.md` and `design-brief-v5.md`), which the CSS comments cite. Also in `/home/dinuka/AI/dhf-desk-docs/`.
+- The **supplier-stock scraper**: Playwright, uses the **service-role key**. Scrapes Tempe Tyres + Newbee Tyre into `desk_supplier_stock`, using sizes from `desk_tracked_tyre_sizes`.
+  - Location **unknown**: it's not on Dinuka's Linux machine, despite what the app.js comment says.
 - Messaging: Resend (email) and Twilio (SMS) are called from Postgres via pg_net. Booking confirmations and day-before reminders are automated.
 
 ## app.js map (8,244 lines)
