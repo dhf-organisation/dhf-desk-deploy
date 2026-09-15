@@ -19,16 +19,17 @@ on https://trello.com/b/8pYZKWmY (board "DHF Desk"), with labels and a checklist
   - Can't sign into the app: staff login is limited to `@dhftyres.com.au` plus `dushentissera@gmail.com`
 - **The repo is PUBLIC.** Whether to make it private is an open P0 decision.
 
-> ⚠️ **BLOCKER: the live site is NOT this repo.** Production (https://dhf-desk.netlify.app) runs newer code than GitHub `master` (checked 2026-09-15).
-> - app.js is 9,532 lines live vs 8,244 here, and index.html, staff.html, portal.html and manifest.json all differ.
-> - Live-only features: hash routing, Chats view, check sheets, job-type item templates, supplier cost requests, delete customer, finish-job-with-checklist, `fetchAllRows` paging.
-> - Live source: `/home/dinuka/AI/dhf-desk-deploy` on Dinuka's Linux machine. Not a git repo, no history.
-> - Netlify site ID `c72c0d97-fae8-4980-b052-85e55879375d`. Deploys go through `netlify deploy --prod`, but the actual trigger is unknown.
-> - **Sync in progress:** PR #2 (https://github.com/dinuka-dhf/dhf-desk-deploy/pull/2) adds the live source plus `tokens.css` and `crm.html`, which the live site also serves.
->   - Verified 2026-09-15: 6 of 7 files are byte-identical to the live site.
->   - `crm.html` differs only in its 2 "Back to Desk" links (live `href='/'`).
-> - **Don't deploy anything built from this repo** until PR #2 is merged (Trello: https://trello.com/c/wyAVp8FI).
-> - The code map and line numbers below describe the **old GitHub** version. Refresh them after PR #2 merges.
+> 🚨 **Merging or pushing to `master` DEPLOYS TO PRODUCTION.** Netlify site "dhf-desk" (ID `c72c0d97-fae8-4980-b052-85e55879375d`) auto-publishes `master`, built from the **repo root**. Confirmed 2026-09-15 when merging PR #2 deployed within about a minute.
+> - Never push to `master` directly; there's no branch protection yet.
+> - Root files get published: `/deploy.sh` is live, and **`/CLAUDE.md` would be too, so don't merge this doc to `master`** until publishing is limited to app files (https://trello.com/c/mccB8VwM).
+> - PR deploy previews are public and also serve root files.
+> - There is a second production deploy path: Dinuka's CLI/agent deploys from `/home/dinuka/AI/dhf-desk-deploy` (not a git repo). The two can overwrite each other.
+>
+> ✅ **Repo = live site (as of 2026-09-15).**
+> - PR #2 (merge `67e47d6`) synced GitHub with production, adding `tokens.css` and `crm.html`.
+> - All 7 app files are byte-identical to https://dhf-desk.netlify.app.
+> - The pre-sync GitHub state is tagged `pre-live-sync-2026-09-15`.
+> - ⚠️ The **code map and line numbers below still describe the OLD pre-sync app.js** (8,244 lines; it's now 9,532, with hash routing, Chats, check sheets, job-type items, supplier cost requests, delete customer). Refresh them before relying on them.
 >
 > **Also from Dinuka's audit (2026-09-15):**
 > - **2026-09-08 outage:** a production deploy containing only `crm.html` wiped the whole site twice. The cause hasn't been traced (https://trello.com/c/3xDKPwIq).
@@ -184,6 +185,6 @@ Also on the board:
 
 ## Working agreements
 
-- Don't commit or push unless asked. Current branch is `master` (rename to `main` is planned).
+- Don't commit or push unless asked. **Never push or merge to `master` without explicit approval: it deploys to production.** Rename to `main` is planned.
 - Don't touch production data or settings without an explicit go-ahead and a card.
 - Keep this file up to date when decisions change.
