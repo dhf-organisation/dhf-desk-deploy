@@ -34,6 +34,10 @@ const ALLOWED_EMAILS=['dushentissera@gmail.com'];
 
 let currentUser=null;
 let currentView='diary';
+// Every routable view name switchView() knows. Used to validate a persisted
+// view before restoring it, so a stale/garbage localStorage value can't leave
+// the app on a blank screen.
+const KNOWN_VIEWS=['diary','jobs','customers','service-schedule','invoices','pos','pipeline','reports','inventory','supplier-stock','chats','messages','timesheets','settings'];
 
 async function handleGoogleSignIn(r){
   try{
@@ -51,12 +55,27 @@ async function enterSession(user){
     await sb.auth.signOut();
     return;
   }
+  // A silent re-auth (Google/FedCM re-issuing a token, a background session
+  // refresh) calls this again with the same user. When that happens, just keep
+  // the app as-is — don't re-run switchView(), which would yank whoever's
+  // mid-task back to a freshly-rendered view.
+  const sameUserReauth=currentUser&&currentUser.email===email;
   currentUser={email,name:user.user_metadata?.full_name||user.user_metadata?.name||email.split('@')[0]};
   document.getElementById('login-page').style.display='none';
   document.getElementById('app').style.display='block';
   document.getElementById('header-name').textContent=currentUser.name;
+  if(sameUserReauth)return;
   loadInvoiceTemplateSetting(); // pre-load so print/email work with the saved template even if Settings hasn't been visited this session
   loadWorkshopDetailsSetting(); // pre-load so the invoice header/footer show real branding even if Settings hasn't been visited this session
+  // Pick the starting view: an explicit #/<view> in the URL wins (deep link,
+  // refresh, bookmark), otherwise fall back to the last view persisted by
+  // activateNavView so a plain reload doesn't always dump them on the Diary.
+  const hashView=(location.hash.match(/^#\/([a-z-]+)$/)||[])[1];
+  if(hashView&&KNOWN_VIEWS.includes(hashView)){
+    currentView=hashView;
+  }else{
+    try{const saved=localStorage.getItem('desk-view');if(saved&&KNOWN_VIEWS.includes(saved))currentView=saved;}catch(e){}
+  }
   switchView(currentView);
 }
 
@@ -67,6 +86,25 @@ async function handleLogout(){
   document.getElementById('login-page').style.display='flex';
   document.getElementById('app').style.display='none';
 }
+
+// Supabase auto-refreshes the session token in the background. If that
+// refresh ever fails (expired/revoked refresh token — e.g. after being
+// signed out elsewhere, or a long idle tab), the client signs itself out
+// locally and fires SIGNED_OUT here. Without this listener the app never
+// finds out: currentUser stays set, the UI still looks logged in, and every
+// request from then on silently 401s (this is what broke "add customer").
+// Only react if we thought we were logged in — handleLogout() already drives
+// the same UI reset for a deliberate sign-out, so this only covers the
+// surprise case.
+sb.auth.onAuthStateChange((event)=>{
+  if(event==='SIGNED_OUT'&&currentUser){
+    currentUser=null;
+    google.accounts.id.disableAutoSelect();
+    document.getElementById('login-page').style.display='flex';
+    document.getElementById('app').style.display='none';
+    showToast('Session expired — please sign in again');
+  }
+});
 
 // ── HUB TOKEN BRIDGE ─────────────────────────────────────────
 // Purely a "you came from the Hub" courtesy signal — DHF Desk is used all
@@ -82,58 +120,136 @@ async function checkHubToken(){
       body:JSON.stringify({p_token:t,p_module:'desk'})
     });
   }catch(e){}
-  history.replaceState({},'',location.pathname);
+  history.replaceState({},'',location.pathname+location.hash);
 }
 
 // ── VIEW ROUTING ─────────────────────────────────────────────
-function activateNavView(view){
-  currentView=view;
-  document.querySelectorAll('#app-nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
-  document.getElementById('main').classList.toggle('full-width',view==='diary');
+// Reflect the current top-level page in the URL as #/<view>, so browser
+// back/forward and a page refresh land on the same section, and a section
+// can be bookmarked. Detail views (a specific invoice, a customer) are not
+// encoded — the hash tracks the nav rail only.
+function syncViewHash(view){
+  const hash='#/'+view;
+  if(location.hash===hash)return;
+  // No hash yet (first paint after sign-in) → replace, so the user's first
+  // Back press doesn't just strip the hash and land on the same page.
+  const method=location.hash?'pushState':'replaceState';
+  try{history[method]({view},'',hash)}catch(e){location.hash=hash}
 }
 
-function switchView(view){
+function activateNavView(view){
+  currentView=view;
+  try{localStorage.setItem('desk-view',view)}catch(e){}
+  document.querySelectorAll('#app-nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
+  document.getElementById('main').classList.toggle('full-width',view==='diary'||view==='chats');
+}
+
+// Bumped on every switchView() call so a slow render that finishes after the
+// user has already clicked another tab knows it's been superseded and bows
+// out instead of clobbering the newer view.
+let viewSwitchToken=0;
+let diaryDataLoaded=false; // true once loadDiaryData() has run at least once
+
+// Per-view state reset whenever the nav rail is used to (re-)enter a section,
+// so you always land on that section's list — not a stale detail view or a
+// filter left over from last visit.
+function resetViewState(view){
+  if(view==='customers'){customersSubView='customers';selectedCustomerId=null;}
+  else if(view==='jobs'){selectedJobId=null;}
+  else if(view==='invoices'){invoicesSubView='invoices';invoiceStatusFilter='all';selectedInvoiceId=null;}
+  else if(view==='messages'){messageChannelFilter='all';}
+  else if(view==='inventory'){inventorySubView='stock';}
+  else if(view==='supplier-stock'){supplierStockSupplierFilter='all';supplierStockSearchTerm='';}
+  else if(view==='service-schedule'){serviceScheduleFilter='overdue';}
+  else if(view==='reports'){reportsCategory='income';reportsActive='by-customer';}
+}
+
+function renderView(view){
+  if(view==='diary')return renderDiaryView();
+  if(view==='jobs')return renderJobsView();
+  if(view==='customers')return renderCustomersView();
+  if(view==='invoices')return renderInvoicesView();
+  if(view==='chats')return renderChatsView();
+  if(view==='messages')return renderMessagesView();
+  if(view==='pos')return renderPosView();
+  if(view==='pipeline')return renderPipelineView();
+  if(view==='inventory')return renderInventoryView();
+  if(view==='supplier-stock')return renderSupplierStockView();
+  if(view==='service-schedule')return renderServiceScheduleView();
+  if(view==='timesheets')return renderTimesheetsView();
+  if(view==='reports')return renderReportsView();
+  if(view==='settings')return renderSettingsView();
+}
+
+// Sections whose list can be painted instantly from data already in memory
+// and then refreshed from the network in the background (stale-while-
+// revalidate). paint() must be a *synchronous* re-render off the current
+// in-memory arrays; busy() is true when the user has since drilled into a
+// detail view, so the background refresh must not paint over them.
+const INSTANT_VIEWS={
+  diary:    {ready:()=>diaryDataLoaded,   load:loadDiaryData,    paint:renderDiaryGrid,   busy:()=>false},
+  jobs:     {ready:()=>jobs.length>0,     load:loadJobsData,     paint:renderJobList,     busy:()=>!!selectedJobId},
+  customers:{ready:()=>customers.length>0,load:loadCustomers,    paint:renderCustomerList,busy:()=>!!selectedCustomerId},
+  invoices: {ready:()=>invoices.length>0, load:loadInvoices,     paint:renderInvoiceList, busy:()=>!!selectedInvoiceId},
+  inventory:{ready:()=>stockItems.length>0,load:loadInventoryData,paint:renderStockList,  busy:()=>false},
+};
+
+function retriggerViewEnter(el){
+  el.classList.remove('view-enter');
+  void el.offsetWidth; // force reflow so the fade-in restarts
+  el.classList.add('view-enter');
+}
+
+async function switchView(view,opts){
   activateNavView(view);
-  if(view==='diary'){
-    renderDiaryView();
-  }else if(view==='jobs'){
-    renderJobsView();
-  }else if(view==='customers'){
-    customersSubView='customers';
-    selectedCustomerId=null;
-    renderCustomersView();
-  }else if(view==='invoices'){
-    invoicesSubView='invoices';
-    invoiceStatusFilter='all';
-    selectedInvoiceId=null;
-    renderInvoicesView();
-  }else if(view==='messages'){
-    messageChannelFilter='all';
-    renderMessagesView();
-  }else if(view==='pos'){
-    renderPosView();
-  }else if(view==='pipeline'){
-    renderPipelineView();
-  }else if(view==='inventory'){
-    inventorySubView='stock';
-    renderInventoryView();
-  }else if(view==='supplier-stock'){
-    supplierStockSupplierFilter='all';
-    supplierStockSearchTerm='';
-    renderSupplierStockView();
-  }else if(view==='service-schedule'){
-    serviceScheduleFilter='overdue';
-    renderServiceScheduleView();
-  }else if(view==='timesheets'){
-    renderTimesheetsView();
-  }else if(view==='reports'){
-    reportsCategory='income';
-    reportsActive='by-customer';
-    renderReportsView();
-  }else if(view==='settings'){
-    renderSettingsView();
+  if(!(opts&&opts.fromHistory))syncViewHash(view);
+  if(view!=='diary')clearInterval(hoistDayClockInterval);
+  const myToken=++viewSwitchToken;
+  const mainEl=document.getElementById('main');
+  resetViewState(view);
+
+  // Fast path: data's already in memory — show it now, refresh behind the scenes.
+  const inst=INSTANT_VIEWS[view];
+  if(inst&&inst.ready()){
+    let painted=false;
+    try{inst.paint();retriggerViewEnter(mainEl);painted=true;}catch(e){}
+    if(painted){
+      (async()=>{
+        try{await inst.load()}catch(e){}
+        if(myToken===viewSwitchToken&&currentView===view&&!inst.busy()){
+          try{inst.paint()}catch(e){}
+        }
+      })();
+      return;
+    }
+  }
+
+  // Cold path: clear immediately (so wide content can't reflow-squish into the
+  // new column width) and show a spinner only if the load runs long.
+  mainEl.classList.remove('view-enter');
+  mainEl.innerHTML='';
+  const spinTimer=setTimeout(()=>{
+    if(myToken===viewSwitchToken)mainEl.innerHTML='<div class="view-spinner" role="status" aria-label="Loading"></div>';
+  },200);
+  try{
+    await renderView(view);
+  }finally{
+    clearTimeout(spinTimer);
+    if(myToken===viewSwitchToken)mainEl.classList.add('view-enter');
   }
 }
+
+// Browser back/forward (popstate) and manual hash edits (hashchange) between
+// top-level pages. pushState/replaceState fire neither, so this can't loop
+// with syncViewHash.
+function routeFromHash(){
+  if(!currentUser)return;
+  const m=location.hash.match(/^#\/([a-z-]+)$/);
+  const view=m&&KNOWN_VIEWS.includes(m[1])?m[1]:'diary';
+  if(view!==currentView)switchView(view,{fromHistory:true});
+}
+window.addEventListener('popstate',routeFromHash);
+window.addEventListener('hashchange',routeFromHash);
 
 function emptyState(icon,title,desc){
   return `<div class="empty-state"><div class="empty-state-title">${title}</div><div>${desc}</div></div>`;
@@ -175,7 +291,7 @@ function onQuickSearch(v){
   if(!results)return;
   const term=v.trim();
   if(term.length<2){results.innerHTML='';return} // 1 char is noise, not a search
-  quickSearchDebounce=setTimeout(()=>runQuickSearch(term),250);
+  quickSearchDebounce=setTimeout(()=>runQuickSearch(term),140);
 }
 
 // PostgREST's or=(...) filter string breaks if the term itself contains one
@@ -387,17 +503,32 @@ let customersSubView='customers'; // 'customers' | 'vehicles'
 let allVehicles=[];
 let vehicleSearchTerm='';
 
+// PostgREST caps every response at the project's "Max rows" setting (1000 by
+// default) — silently. A bare .select() on a table with more rows than that
+// just stops at the cap with no error (this is why the customer list ended
+// mid-alphabet). Page through in cap-sized chunks so full-table loads return
+// everything. `build` must return a *fresh* query builder each call, since a
+// builder can't be re-ranged after use. Needs a stable .order() to page safely.
+async function fetchAllRows(build){
+  const PAGE=1000;
+  let out=[],from=0;
+  for(;;){
+    const {data,error}=await build().range(from,from+PAGE-1);
+    if(error)throw error;
+    out=out.concat(data||[]);
+    if(!data||data.length<PAGE)break;
+    from+=PAGE;
+  }
+  return out;
+}
+
 async function loadCustomers(){
   try{
-    const {data,error}=await sb.from('desk_customers').select('*').order('name');
-    if(error)throw error;
-    customers=data||[];
+    customers=await fetchAllRows(()=>sb.from('desk_customers').select('*').order('name'));
   }catch(e){customers=[];showToast('Could not load customers')}
 }
 
 async function renderCustomersView(){
-  const main=document.getElementById('main');
-  main.innerHTML=`<div class="empty-state">Loading…</div>`;
   await loadCustomers();
   if(selectedCustomerId){
     await renderCustomerDetail(selectedCustomerId);
@@ -423,9 +554,7 @@ function customersTabBar(){
 
 async function loadAllVehicles(){
   try{
-    const {data,error}=await sb.from('desk_vehicles').select('*,customer:desk_customers(id,name)').order('created_at',{ascending:false});
-    if(error)throw error;
-    allVehicles=data||[];
+    allVehicles=await fetchAllRows(()=>sb.from('desk_vehicles').select('*,customer:desk_customers(id,name)').order('created_at',{ascending:false}).order('id'));
   }catch(e){allVehicles=[];showToast('Could not load vehicles')}
 }
 
@@ -521,6 +650,13 @@ async function loadCustomerCreditBalance(customerId){
   }catch(e){return 0}
 }
 
+function preferredContactLabel(pc){
+  if(!pc)return '—';
+  if(pc==='call')return '📞 Phone call';
+  const m=CHAT_CHANNELS[pc];
+  return m?`${chatBadge(pc)} ${esc(m.label)}`:esc(pc);
+}
+
 async function renderCustomerDetail(id){
   const c=customers.find(x=>x.id===id);
   const main=document.getElementById('main');
@@ -530,10 +666,11 @@ async function renderCustomerDetail(id){
   let h=`<button class="back-link" onclick="backToCustomerList()">← All customers</button>
   <div class="detail-grid">
     <div class="panel">
-      <div class="panel-head"><div class="panel-title">${esc(c.name)}</div><button class="btn-link" onclick="openCustomerModal('${c.id}')">Edit</button></div>
+      <div class="panel-head"><div class="panel-title">${esc(c.name)}</div><div style="display:flex;gap:var(--space-3)"><button class="btn-link" onclick="openCustomerModal('${c.id}')">Edit</button><button class="btn-danger-link" onclick="openDeleteCustomerModal('${c.id}')">Delete</button></div></div>
       <div class="field-row"><span class="field-label">Email</span><span class="field-val">${esc(c.email||'—')}</span></div>
       <div class="field-row"><span class="field-label">Mobile</span><span class="field-val">${esc(c.mobile||'—')}</span></div>
       <div class="field-row"><span class="field-label">Phone</span><span class="field-val">${esc(c.phone||'—')}</span></div>
+      <div class="field-row"><span class="field-label">Preferred contact</span><span class="field-val">${preferredContactLabel(c.preferred_contact)}</span></div>
       <div class="field-row"><span class="field-label">Address</span><span class="field-val">${esc([c.street_line,c.suburb,c.state,c.postcode].filter(Boolean).join(', ')||'—')}</span></div>
       <div class="field-row"><span class="field-label">Payment term</span><span class="field-val">${esc(c.payment_term||'—')}</span></div>
       <div class="field-row"><span class="field-label">Price level</span><span class="field-val">${esc(c.price_level||'—')}</span></div>
@@ -559,6 +696,64 @@ function backToCustomerList(){
   renderCustomerList();
 }
 
+// Permanent delete — deliberately NOT a soft-delete like jobs. Only ever
+// succeeds for a customer with zero linked records (jobs, vehicles,
+// invoices/quotes, credit notes, follow ups, reviews, messages): the DB's
+// own foreign-key constraints are the real guard, we just catch the
+// violation (Postgres 23503) and explain it instead of a raw error. A
+// customer with any history can't be deleted this way — archive/deactivate
+// would be the tool for that, not built here (not what was asked for).
+function openDeleteCustomerModal(id){
+  const c=customers.find(x=>x.id===id);
+  if(!c)return;
+  const html=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal-card">
+      <div class="modal-title">Delete customer</div>
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:var(--space-4)">
+        This permanently deletes <strong>${esc(c.name)}</strong> — it cannot be undone.
+        If this customer has any jobs, vehicles, invoices/quotes, credit notes, follow ups,
+        reviews or messages on file, the delete will be blocked and nothing will change.
+      </div>
+      <div class="form-actions">
+        <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn-danger" onclick="confirmDeleteCustomer('${id}')">Delete permanently</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
+async function confirmDeleteCustomer(id){
+  try{
+    const {data,error}=await sb.from('desk_customers').delete().eq('id',id).select();
+    if(error){
+      if(error.code==='23503'){
+        closeModal();
+        showToast('Can\'t delete — this customer has jobs, invoices or other records on file');
+        return;
+      }
+      throw error;
+    }
+    if(!data||!data.length){
+      // No error but nothing came back — either the row was already gone,
+      // or RLS has no DELETE policy for this table and silently affected 0
+      // rows (see desk_invoices/desk_stock_adjustments precedent). Either
+      // way, don't claim success.
+      closeModal();
+      showToast('Delete did not go through — no rows removed');
+      return;
+    }
+    closeModal();
+    showToast('Customer deleted');
+    selectedCustomerId=null;
+    await loadCustomers();
+    renderCustomerList();
+  }catch(e){
+    console.error('confirmDeleteCustomer failed:',e);
+    showToast('Delete failed: '+(e?.message||'unknown error'));
+  }
+}
+
 function openCustomerModal(id){
   const c=id?customers.find(x=>x.id===id):null;
   const html=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
@@ -572,6 +767,16 @@ function openCustomerModal(id){
       <input class="form-input" id="cf-phone" value="${c?esc(c.phone||''):''}">
       <label class="form-label">Email</label>
       <input class="form-input" id="cf-email" value="${c?esc(c.email||''):''}">
+      <label class="form-label">Preferred contact</label>
+      <select class="form-select" id="cf-preferred-contact">
+        <option value="">No preference set</option>
+        <option value="sms" ${c?.preferred_contact==='sms'?'selected':''}>SMS</option>
+        <option value="email" ${c?.preferred_contact==='email'?'selected':''}>Email</option>
+        <option value="whatsapp" ${c?.preferred_contact==='whatsapp'?'selected':''}>WhatsApp</option>
+        <option value="facebook" ${c?.preferred_contact==='facebook'?'selected':''}>Facebook</option>
+        <option value="instagram" ${c?.preferred_contact==='instagram'?'selected':''}>Instagram</option>
+        <option value="call" ${c?.preferred_contact==='call'?'selected':''}>Phone call</option>
+      </select>
       <label class="form-label">Address</label>
       <input class="form-input" id="cf-address-search" placeholder="Start typing an address…" autocomplete="off">
       <input class="form-input" id="cf-street" placeholder="Street" value="${c?esc(c.street_line||''):''}">
@@ -616,6 +821,7 @@ async function saveCustomerForm(id){
     mobile:document.getElementById('cf-mobile').value.trim()||null,
     phone:document.getElementById('cf-phone').value.trim()||null,
     email:document.getElementById('cf-email').value.trim()||null,
+    preferred_contact:document.getElementById('cf-preferred-contact').value||null,
     street_line:document.getElementById('cf-street').value.trim()||null,
     suburb:document.getElementById('cf-suburb').value.trim()||null,
     state:document.getElementById('cf-state').value.trim()||null,
@@ -651,7 +857,7 @@ async function saveCustomerForm(id){
     showToast(id?'Customer updated':'Customer added');
     await loadCustomers();
     if(id){await renderCustomerDetail(id)}else{renderCustomerList()}
-  }catch(e){showToast('Save failed')}
+  }catch(e){console.error('saveCustomerForm failed:',e);showToast('Save failed: '+(e?.message||'unknown error'))}
 }
 
 function openVehicleModal(id,customerId){
@@ -727,6 +933,8 @@ let newJobVehicleId=null;
 let newJobVehicles=[];
 let newJobShowNewVehicleFields=false;
 let newJobPresetDate=null;
+let newJobPresetSlot=null; // {time, division, bay} when opened from a diary slot
+let newJobReturnView='jobs'; // where saveNewJob() lands after creating — see openNewJobModal
 let allTags=[];
 let jobTagsMap={}; // job_id -> [{id,name,color}]
 let jobNotesMap={}; // job_id -> [notes], newest last (same order as the Job Card thread)
@@ -816,8 +1024,6 @@ function switchMessagesFilter(f){
 }
 
 async function renderMessagesView(){
-  const main=document.getElementById('main');
-  main.innerHTML=`<div class="empty-state">Loading…</div>`;
   await Promise.all([loadMessages(),loadMessagingStatus()]);
   renderMessagesPage();
 }
@@ -961,6 +1167,146 @@ async function sendComposedMessage(){
   }
 }
 
+// ── CHATS (demo/mockup only — sample data, nothing here reads or
+// writes Supabase. A unified WhatsApp-style inbox across SMS, Email,
+// WhatsApp, Facebook and Instagram is a real, large piece of work (each
+// non-SMS/Email channel needs its own Meta/Twilio integration and an
+// inbound webhook before real two-way messages can flow) — this screen
+// is just the look-and-feel for Dinuka to react to before any of that
+// gets built. See CHAT_CHANNELS for per-platform display metadata. ──
+const CHAT_CHANNELS={
+  sms:{label:'SMS',cls:'chat-ch-sms',vb:'0 0 24 24',icon:'<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'},
+  email:{label:'Email',cls:'chat-ch-email',vb:'0 0 24 24',icon:'<rect x="2" y="4" width="20" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>'},
+  whatsapp:{label:'WhatsApp',cls:'chat-ch-whatsapp',vb:'0 0 448 512',icon:'<path fill="currentColor" d="M380.9 97.1C339 55.1 283.2 32 223.9 32c-122.4 0-222 99.6-222 222 0 39.1 10.2 77.3 29.6 111L0 480l117.7-30.9c32.4 17.7 68.9 27 106.1 27h.1c122.3 0 224.1-99.6 224.1-222 0-59.3-25.2-115-67.1-157zm-157 341.6c-33.2 0-65.7-8.9-94-25.7l-6.7-4-69.8 18.3L72 359.2l-4.4-7c-18.5-29.4-28.2-63.3-28.2-98.2 0-101.7 82.8-184.5 184.6-184.5 49.3 0 95.6 19.2 130.4 54.1 34.8 34.9 56.2 81.2 56.1 130.5 0 101.8-84.9 184.6-186.6 184.6zm101.2-138.2c-5.5-2.8-32.8-16.2-37.9-18-5.1-1.9-8.8-2.8-12.5 2.8-3.7 5.6-14.3 18-17.6 21.8-3.2 3.7-6.5 4.2-12 1.4-32.6-16.3-54-29.1-75.5-66-5.7-9.8 5.7-9.1 16.3-30.3 1.8-3.7.9-6.9-.5-9.7-1.4-2.8-12.5-30.1-17.1-41.2-4.5-10.8-9.1-9.3-12.5-9.5-3.2-.2-6.9-.2-10.6-.2-3.7 0-9.7 1.4-14.8 6.9-5.1 5.6-19.4 19-19.4 46.3 0 27.3 19.9 53.7 22.6 57.4 2.8 3.7 39.1 59.7 94.8 83.8 35.2 15.2 49 16.5 66.6 13.9 10.7-1.6 32.8-13.4 37.4-26.4 4.6-13 4.6-24.1 3.2-26.4-1.3-2.5-5-3.9-10.5-6.6z"/>'},
+  facebook:{label:'Facebook',cls:'chat-ch-facebook',vb:'0 0 512 512',icon:'<path fill="currentColor" d="M512 256C512 114.6 397.4 0 256 0S0 114.6 0 256C0 383 91.7 489 213 511.1V330H148V256h65V202c0-64.2 39.5-99.5 96.7-99.5c27.4 0 56.8 4.9 56.8 4.9v65.5H317.6c-31.5 0-41.5 19.5-41.5 39.5v51.1h72l-11.5 74H256V512C398.7 489.4 512 379.5 512 256z"/>'},
+  instagram:{label:'Instagram',cls:'chat-ch-instagram',vb:'0 0 448 512',icon:'<path fill="currentColor" d="M224.1 141c-63.6 0-114.9 51.3-114.9 114.9s51.3 114.9 114.9 114.9S339 319.5 339 255.9 287.7 141 224.1 141zm0 189.6c-41.1 0-74.7-33.5-74.7-74.7s33.5-74.7 74.7-74.7 74.7 33.5 74.7 74.7-33.6 74.7-74.7 74.7zm146.4-194.3c0 14.9-12 26.8-26.8 26.8-14.9 0-26.8-12-26.8-26.8s12-26.8 26.8-26.8 26.8 12 26.8 26.8zm76.1 27.2c-1.7-35.9-9.9-67.7-36.2-93.9-26.2-26.2-58-34.4-93.9-36.2-37-2.1-147.9-2.1-184.9 0-35.8 1.7-67.6 9.9-93.9 36.1s-34.4 58-36.2 93.9c-2.1 37-2.1 147.9 0 184.9 1.7 35.9 9.9 67.7 36.2 93.9s58 34.4 93.9 36.2c37 2.1 147.9 2.1 184.9 0 35.9-1.7 67.7-9.9 93.9-36.2 26.2-26.2 34.4-58 36.2-93.9 2.1-37 2.1-147.8 0-184.8zM398.8 388c-7.8 19.6-22.9 34.7-42.6 42.6-29.5 11.7-99.5 9-132.1 9s-102.7 2.6-132.1-9c-19.6-7.8-34.7-22.9-42.6-42.6-11.7-29.5-9-99.5-9-132.1s-2.6-102.7 9-132.1c7.8-19.6 22.9-34.7 42.6-42.6 29.5-11.7 99.5-9 132.1-9s102.7-2.6 132.1 9c19.6 7.8 34.7 22.9 42.6 42.6 11.7 29.5 9 99.5 9 132.1s2.7 102.7-9 132.1z"/>'}
+};
+const chatThreadsDemo=[
+  {id:1,customer:'Sarah Mitchell',handle:'+61 412 555 018',channel:'whatsapp',unread:2,messages:[
+    {dir:'in',channel:'whatsapp',time:'Mon 9:14am',body:'Hi, do you have 205/55R16 in stock?'},
+    {dir:'out',channel:'whatsapp',time:'Mon 9:22am',body:"Yes — we've got Bridgestone and Michelin in that size. Want me to book you in?"},
+    {dir:'in',channel:'whatsapp',time:'Mon 9:25am',body:'Yes please, Thursday arvo if possible'},
+    {dir:'out',channel:'whatsapp',time:'Mon 9:31am',body:'All good, 2:30pm Thursday works. See you then!'},
+    {dir:'in',channel:'whatsapp',time:'Wed 4:02pm',body:'Quick one — is that still 2:30 tomorrow?'}
+  ]},
+  {id:2,customer:'James Chen',handle:'+61 400 221 887',channel:'sms',unread:0,messages:[
+    {dir:'out',channel:'sms',time:'Tue 8:00am',body:'DHF Tyres: reminder your Hilux is booked in tomorrow 10am for a service. Reply STOP to opt out.'},
+    {dir:'in',channel:'sms',time:'Tue 8:41am',body:"Thanks, I'll be there"}
+  ]},
+  {id:3,customer:'Priya Nair',handle:'Priya Nair',channel:'facebook',unread:1,messages:[
+    {dir:'in',channel:'facebook',time:'Fri 6:47pm',body:"Hey! How much for a front brake pad + rotor change on a 2018 Corolla?"},
+    {dir:'out',channel:'facebook',time:'Fri 7:10pm',body:"Hi Priya, for that we'd be looking at roughly $280-$340 depending on pad brand, plus labour. Want a firm quote?"},
+    {dir:'in',channel:'facebook',time:'Fri 7:12pm',body:'Yes please, and do you guys do same-day?'}
+  ]},
+  {id:4,customer:'Liam O’Connor',handle:'@liam.oconnor',channel:'instagram',unread:0,messages:[
+    {dir:'in',channel:'instagram',time:'Sat 11:03am',body:'saw your reel on the alloy rim polish, how much roughly for a set of 4?'},
+    {dir:'out',channel:'instagram',time:'Sat 12:40pm',body:"Depends on size/condition but usually $220-$320 for a set of 4. Bring them in and we'll give you an exact price on the spot."}
+  ]},
+  {id:5,customer:'Grace Thompson',handle:'grace.thompson@email.com',channel:'email',unread:0,messages:[
+    {dir:'in',channel:'email',time:'Thu 2:15pm',subject:'Quote request — Subaru Outback',body:'Hi, could I get a quote for 4x new tyres for a 2020 Outback? Whatever you’d recommend for mostly highway driving.'},
+    {dir:'out',channel:'email',time:'Thu 3:48pm',subject:'RE: Quote request — Subaru Outback',body:'Hi Grace, attached a quote for a set of 4 Bridgestone Alenza — great highway tyre for the Outback. Let me know if you’d like to go ahead and I’ll get you booked in.'}
+  ]},
+  {id:6,customer:'Mark Anderson',handle:'+61 421 998 044',channel:'sms',unread:1,messages:[
+    {dir:'out',channel:'sms',time:'Mon 9:00am',body:'DHF Tyres: hi Mark, your Ranger is due for a service (last done 6 months ago). Want us to book you in?'},
+    {dir:'in',channel:'whatsapp',time:'Mon 6:22pm',body:'Hey sorry missed this, yeah can you fit me in next week? Saw you’re on WhatsApp too'},
+    {dir:'out',channel:'whatsapp',time:'Mon 6:30pm',body:'No worries! Got Tuesday 9am or Thursday 1pm free — either work?'},
+    {dir:'in',channel:'whatsapp',time:'Mon 6:33pm',body:'Thursday 1pm works great'}
+  ]}
+];
+let chatChannelFilter='all';
+let chatActiveThreadId=null;
+
+function renderChatsView(){
+  if(chatActiveThreadId==null)chatActiveThreadId=chatThreadsDemo[0]?.id??null;
+  renderChatsPage();
+}
+
+function switchChatFilter(f){
+  chatChannelFilter=f;
+  const stillVisible=chatThreadsDemo.some(t=>t.id===chatActiveThreadId&&(f==='all'||t.channel===f));
+  if(!stillVisible){
+    const first=chatThreadsDemo.find(t=>f==='all'||t.channel===f);
+    chatActiveThreadId=first?first.id:null;
+  }
+  renderChatsPage();
+}
+
+function selectChatThread(id){
+  chatActiveThreadId=id;
+  const t=chatThreadsDemo.find(x=>x.id===id);
+  if(t)t.unread=0;
+  renderChatsPage();
+}
+
+function chatBadge(channel){
+  const m=CHAT_CHANNELS[channel]||{label:channel,cls:'',vb:'0 0 24 24',icon:''};
+  return `<span class="chat-badge ${m.cls}" title="${esc(m.label)}"><svg viewBox="${m.vb}" aria-hidden="true">${m.icon}</svg></span>`;
+}
+
+function renderChatsPage(){
+  const main=document.getElementById('main');
+  const threads=chatThreadsDemo.filter(t=>chatChannelFilter==='all'||t.channel===chatChannelFilter)
+    .slice().sort((a,b)=>b.id-a.id);
+  const active=chatThreadsDemo.find(t=>t.id===chatActiveThreadId)||null;
+  const filterTabs=['all','sms','email','whatsapp','facebook','instagram'];
+  let h=`<div class="chat-demo-banner">Demo data — this is a mockup of a unified customer chat inbox, not connected to real SMS/WhatsApp/Facebook/Instagram yet.</div>
+  <div class="chat-shell">
+    <div class="chat-list-pane">
+      <div class="chat-list-head">
+        <div class="panel-title">Chats</div>
+        <input class="form-input chat-search" placeholder="Search customers…" disabled>
+      </div>
+      <div class="status-tabs chat-filter-tabs">
+        <div class="status-tab chat-filter-tab-all ${chatChannelFilter==='all'?'active':''}" onclick="switchChatFilter('all')">All</div>
+        ${filterTabs.filter(f=>f!=='all').map(f=>{const m=CHAT_CHANNELS[f];return `<div class="chat-filter-tab-icon ${m.cls} ${chatChannelFilter===f?'active':''}" onclick="switchChatFilter('${f}')" title="${esc(m.label)}"><svg viewBox="${m.vb}" aria-hidden="true">${m.icon}</svg></div>`;}).join('')}
+      </div>
+      <div class="chat-thread-list">
+        ${threads.length?threads.map(t=>{
+          const last=t.messages[t.messages.length-1];
+          return `<div class="chat-thread-row ${t.id===chatActiveThreadId?'active':''}" onclick="selectChatThread(${t.id})">
+            <div class="chat-avatar">${esc(t.customer.split(' ').map(w=>w[0]).slice(0,2).join(''))}</div>
+            <div class="chat-thread-main">
+              <div class="chat-thread-top">
+                <span class="chat-thread-name">${esc(t.customer)}</span>
+                <span class="chat-thread-time">${last.time.split(' ').slice(1).join(' ')||last.time}</span>
+              </div>
+              <div class="chat-thread-preview">${chatBadge(last.channel)}<span>${esc((last.body||'').slice(0,48))}${(last.body||'').length>48?'…':''}</span></div>
+            </div>
+            ${t.unread?`<div class="chat-unread-dot">${t.unread}</div>`:''}
+          </div>`;
+        }).join(''):'<div class="list-empty">No chats on this channel.</div>'}
+      </div>
+    </div>
+    <div class="chat-panel">
+      ${active?`
+        <div class="chat-panel-head">
+          <div class="chat-avatar">${esc(active.customer.split(' ').map(w=>w[0]).slice(0,2).join(''))}</div>
+          <div class="chat-panel-head-main">
+            <div class="chat-panel-name">${esc(active.customer)}</div>
+            <div class="chat-panel-handle">${esc(active.handle)}</div>
+          </div>
+          ${chatBadge(active.channel)}
+        </div>
+        <div class="chat-messages">
+          ${active.messages.map(m=>`
+            <div class="chat-bubble-row ${m.dir==='out'?'out':'in'}">
+              <div class="chat-bubble">
+                ${m.subject?`<div class="chat-bubble-subject">${esc(m.subject)}</div>`:''}
+                <div class="chat-bubble-body">${esc(m.body)}</div>
+                <div class="chat-bubble-meta">${chatBadge(m.channel)}<span>${esc(m.time)}</span></div>
+              </div>
+            </div>`).join('')}
+        </div>
+        <div class="chat-compose">
+          <select class="form-select chat-compose-channel" disabled><option>${CHAT_CHANNELS[active.channel].label}</option></select>
+          <input class="form-input chat-compose-input" placeholder="Message ${esc(active.customer)}… (demo — sending disabled)" disabled>
+          <button class="btn-primary" disabled>Send</button>
+        </div>`:'<div class="empty-state">Select a chat</div>'}
+    </div>
+  </div>`;
+  main.innerHTML=h;
+}
+
 // ── POS (quick walk-in/counter sale) ──────────────────────────
 // A POS sale is just a fast-path invoice: items get built up in memory
 // (posCart) rather than persisted line-by-line like the Invoice detail
@@ -1017,11 +1363,11 @@ async function loadPosSales(){
 }
 
 async function renderPosView(){
-  const main=document.getElementById('main');
-  main.innerHTML=`<div class="empty-state">Loading…</div>`;
-  if(!customers.length)await loadCustomers();
-  await loadStockItems();
-  await loadPosSales();
+  await Promise.all([
+    customers.length?null:loadCustomers(),
+    loadStockItems(),
+    loadPosSales()
+  ]);
   renderPosPage();
 }
 
@@ -1228,20 +1574,16 @@ let pipelineJobs=[];
 
 async function loadPipelineJobs(){
   try{
-    const {data,error}=await sb.from('desk_jobs')
+    pipelineJobs=await fetchAllRows(()=>sb.from('desk_jobs')
       .select('id,job_type,booked_at,estimated_value,status,source_id,customer:desk_customers(name)')
       .eq('is_deleted',false)
       .neq('status','finished')
       .not('booked_at','is',null)
-      .order('booked_at');
-    if(error)throw error;
-    pipelineJobs=data||[];
+      .order('booked_at').order('id'));
   }catch(e){pipelineJobs=[];showToast('Could not load pipeline')}
 }
 
 async function renderPipelineView(){
-  const main=document.getElementById('main');
-  main.innerHTML=`<div class="empty-state">Loading…</div>`;
   if(!jobSources.length)await loadJobSources();
   await loadPipelineJobs();
   renderPipelinePage();
@@ -1358,9 +1700,7 @@ let stockCategories=[]; // flat list — MechanicDesk's own Category dropdown sh
 
 async function loadStockItems(){
   try{
-    const {data,error}=await sb.from('desk_stock').select('*,supplier:desk_suppliers(name),category:desk_stock_categories(id,name)').order('name');
-    if(error)throw error;
-    stockItems=data||[];
+    stockItems=await fetchAllRows(()=>sb.from('desk_stock').select('*,supplier:desk_suppliers(name),category:desk_stock_categories(id,name)').order('name').order('id'));
   }catch(e){stockItems=[];showToast('Could not load inventory')}
 }
 
@@ -1380,9 +1720,11 @@ async function loadSuppliers(){
   }catch(e){suppliers=[]}
 }
 
+async function loadInventoryData(){
+  await Promise.all([loadStockItems(),loadSuppliers(),loadStockCategories()]);
+}
+
 async function renderInventoryView(){
-  const main=document.getElementById('main');
-  main.innerHTML=`<div class="empty-state">Loading…</div>`;
   if(inventorySubView==='purchase-orders'){
     selectedPoId=null;
     poStatusFilter='all';
@@ -1390,9 +1732,7 @@ async function renderInventoryView(){
     renderPoList();
     return;
   }
-  await loadStockItems();
-  await loadSuppliers();
-  await loadStockCategories();
+  await loadInventoryData();
   if(inventorySubView==='suppliers'){renderSuppliersList()}else{renderStockList()}
 }
 
@@ -1854,9 +2194,7 @@ async function saveSupplierForm(id){
 // ── Purchase Orders (sub-tab of Inventory) ───────────────────
 async function loadPurchaseOrders(){
   try{
-    const {data,error}=await sb.from('desk_purchase_orders').select('*,supplier:desk_suppliers(name),items:desk_purchase_order_items(description,qty,unit_cost,stock_id)').order('order_date',{ascending:false});
-    if(error)throw error;
-    purchaseOrders=data||[];
+    purchaseOrders=await fetchAllRows(()=>sb.from('desk_purchase_orders').select('*,supplier:desk_suppliers(name),items:desk_purchase_order_items(description,qty,unit_cost,stock_id)').order('order_date',{ascending:false}).order('id'));
   }catch(e){purchaseOrders=[];showToast('Could not load purchase orders')}
 }
 
@@ -2086,17 +2424,13 @@ function calcInvoiceTotals(items,discountType,discountValue){
 
 async function loadInvoices(){
   try{
-    const {data,error}=await sb.from('desk_invoices')
+    invoices=await fetchAllRows(()=>sb.from('desk_invoices')
       .select('*,customer:desk_customers(name,email),vehicle:desk_vehicles(rego,make,model),items:desk_invoice_items(qty,unit_price)')
-      .order('invoice_no',{ascending:false});
-    if(error)throw error;
-    invoices=data||[];
+      .order('invoice_no',{ascending:false}).order('id'));
   }catch(e){invoices=[];showToast('Could not load invoices')}
 }
 
 async function renderInvoicesView(){
-  const main=document.getElementById('main');
-  main.innerHTML=`<div class="empty-state">Loading…</div>`;
   await loadInvoices();
   if(selectedInvoiceId){await renderInvoiceDetail(selectedInvoiceId)}else{renderInvoiceList()}
 }
@@ -2137,17 +2471,13 @@ function invoicesTabBar(){
 // breakdown, daily table with drill-down to that day's individual payments) ──
 async function loadAllPayments(){
   try{
-    const {data,error}=await sb.from('desk_payments')
+    allPayments=await fetchAllRows(()=>sb.from('desk_payments')
       .select('*,invoice:desk_invoices(invoice_no,doc_type,customer:desk_customers(name))')
-      .order('paid_at',{ascending:false});
-    if(error)throw error;
-    allPayments=data||[];
+      .order('paid_at',{ascending:false}).order('id'));
   }catch(e){allPayments=[];showToast('Could not load payments')}
 }
 
 async function renderPaymentsListView(){
-  const main=document.getElementById('main');
-  main.innerHTML=`<div class="empty-state">Loading…</div>`;
   await loadAllPayments();
   renderPaymentsList();
 }
@@ -2336,15 +2666,11 @@ ${html}
 // ── Bills (accounts payable — sub-tab of Invoices) ──────────
 async function loadBills(){
   try{
-    const {data,error}=await sb.from('desk_bills').select('*,supplier:desk_suppliers(name)').order('bill_date',{ascending:false});
-    if(error)throw error;
-    bills=data||[];
+    bills=await fetchAllRows(()=>sb.from('desk_bills').select('*,supplier:desk_suppliers(name)').order('bill_date',{ascending:false}).order('id'));
   }catch(e){bills=[];showToast('Could not load bills')}
 }
 
 async function renderBillsView(){
-  const main=document.getElementById('main');
-  main.innerHTML=`<div class="empty-state">Loading…</div>`;
   await Promise.all([loadBills(),loadSuppliers(),loadXeroAccounts()]);
   if(selectedBillId){await renderBillDetail(selectedBillId)}else{renderBillList()}
 }
@@ -2562,11 +2888,9 @@ async function deleteBillPayment(paymentId,billId){
 // desk_credit_application_guard trigger.
 async function loadCreditNotes(){
   try{
-    const {data,error}=await sb.from('desk_credit_notes')
+    creditNotes=await fetchAllRows(()=>sb.from('desk_credit_notes')
       .select('*,customer:desk_customers(name),invoice:desk_invoices(invoice_no,doc_type),items:desk_credit_note_items(qty,unit_price),applications:desk_credit_applications(amount)')
-      .order('credit_note_no',{ascending:false});
-    if(error)throw error;
-    creditNotes=data||[];
+      .order('credit_note_no',{ascending:false}).order('id'));
   }catch(e){creditNotes=[];showToast('Could not load credit notes')}
 }
 
@@ -2576,8 +2900,6 @@ function creditNoteRemaining(cn){return cn.status==='issued'?Math.max(0,creditNo
 function creditNoteBadgeClass(status){return status==='issued'?'finished':status==='void'?'on_hold':'draft'}
 
 async function renderCreditNotesView(){
-  const main=document.getElementById('main');
-  main.innerHTML=`<div class="empty-state">Loading…</div>`;
   await loadCreditNotes();
   if(selectedCreditNoteId){await renderCreditNoteDetail(selectedCreditNoteId)}else{renderCreditNoteList()}
 }
@@ -3257,8 +3579,7 @@ const XERO_SYNC_LABELS={not_synced:'Not synced',pending:'Pending',synced:'Synced
 // (renderJobDetail's jobInvoicePanelJobId branch), from the exact same data
 // load and template. Returns null if the invoice no longer exists.
 async function buildInvoicePanelHtml(id){
-  await loadInvoiceItems(id);
-  await loadStockItems();
+  await Promise.all([loadInvoiceItems(id),loadStockItems()]);
   const inv=invoices.find(x=>x.id===id);
   if(!inv)return null;
   const docType=inv.doc_type||'invoice';
@@ -3844,7 +4165,27 @@ async function createDocFromJob(jobId,docType){
     const {data,error}=await sb.from('desk_invoices').insert({customer_id:j.customer_id,vehicle_id:j.vehicle_id||null,job_id:j.id,doc_type:docType,order_no:j.order_no||null}).select();
     if(error)throw error;
     const invId=data[0].id;
-    await sb.from('desk_invoice_items').insert({invoice_id:invId,description:j.job_type,qty:1,unit_price:0});
+    // Seed the document from the job type's default items when it has them
+    // (Settings → Job Types → Items); otherwise fall back to the single $0
+    // line named after the job type, as before. Any failure talking to the
+    // new table (e.g. migration not run yet) also falls back, so invoice
+    // creation never depends on the feature being set up.
+    if(!jobTypes.length)await loadJobTypes();
+    const jt=jobTypes.find(t=>t.name===j.job_type);
+    let seeded=false;
+    if(jt){
+      try{
+        const {data:tpl,error:tplErr}=await sb.from('desk_job_type_invoice_items').select('*').eq('job_type_id',jt.id).order('sort_order').order('created_at');
+        if(tplErr)throw tplErr;
+        if(tpl&&tpl.length){
+          const rows=tpl.map((it,i)=>({invoice_id:invId,description:it.description,qty:it.qty,unit_price:it.unit_price,tax_type:it.tax_type,is_header:it.is_header,stock_id:it.stock_id||null,sort_order:i}));
+          const {error:seedErr}=await sb.from('desk_invoice_items').insert(rows);
+          if(seedErr)throw seedErr;
+          seeded=true;
+        }
+      }catch(e){/* fall through to the legacy seed below */}
+    }
+    if(!seeded)await sb.from('desk_invoice_items').insert({invoice_id:invId,description:j.job_type,qty:1,unit_price:0});
     showToast((docType==='quote'?'Quote':'Invoice')+' created');
     await openInvoiceInJob(invId,jobId);
   }catch(e){showToast('Could not create')}
@@ -4160,6 +4501,7 @@ async function updateJobField(id,field,value){
 
 async function setJobStatus(id,status){
   if(status==='finished'){
+    if(!(await confirmFinishWithChecklist(id)))return;
     const j=jobs.find(x=>x.id===id);
     if(j&&j.vehicle_id){
       if(!serviceTypes.length)await loadServiceTypes();
@@ -4169,6 +4511,20 @@ async function setJobStatus(id,status){
     }
   }
   await applyJobStatus(id,status);
+}
+
+// Warn-and-confirm when finishing a job with unticked checklist items — real
+// jobs sometimes legitimately skip items, so it's a confirm, not a block. If
+// the check itself fails, don't hold the status change hostage.
+async function confirmFinishWithChecklist(jobId){
+  try{
+    const {data,error}=await sb.from('desk_job_checklist_items').select('id,is_complete,is_header').eq('job_id',jobId);
+    if(error)throw error;
+    // Headers are section labels, not work — they can never be "incomplete".
+    const open=(data||[]).filter(i=>!i.is_header&&!i.is_complete).length;
+    if(!open)return true;
+    return confirm(`${open} checklist item${open===1?'':'s'} still incomplete — finish the job anyway?`);
+  }catch(e){return true}
 }
 
 async function applyJobStatus(id,status,jobExtra,vehiclePayload){
@@ -4261,12 +4617,10 @@ async function skipServiceReminder(jobId){
 // ── Service Schedule view ───────────────────────────────────
 async function loadServiceScheduleRows(){
   try{
-    const {data,error}=await sb.from('desk_vehicles')
+    serviceScheduleRows=await fetchAllRows(()=>sb.from('desk_vehicles')
       .select('*,customer:desk_customers(id,name,mobile,phone,email)')
       .not('next_service_due_date','is',null)
-      .order('next_service_due_date',{ascending:true});
-    if(error)throw error;
-    serviceScheduleRows=data||[];
+      .order('next_service_due_date',{ascending:true}).order('id'));
   }catch(e){serviceScheduleRows=[];showToast('Could not load service schedule')}
 }
 
@@ -4285,8 +4639,6 @@ function filteredServiceScheduleRows(){
 }
 
 async function renderServiceScheduleView(){
-  const main=document.getElementById('main');
-  main.innerHTML=`<div class="empty-state">Loading…</div>`;
   await loadServiceScheduleRows();
   renderServiceScheduleList();
 }
@@ -4368,9 +4720,12 @@ async function clearServiceReminder(vehicleId){
 // Reads desk_supplier_stock, populated by an external scraper (Playwright,
 // runs via cron on Dinuka's own machine — not part of this app) that logs
 // into wholesaler portals (Tempe Tyres, Newbee Tyre — both COSTAR-platform)
-// and pulls size/brand/price/stock per configured tyre size. This view is
-// read-only — the app never writes to this table, only the scraper does
-// (via its own service-role key, bypassing RLS).
+// and pulls size/brand/price/stock per configured tyre size. The view is
+// read-only with one exception: the "Get cost" button sets cost_requested_at
+// — the single column desk users can update (column-level grant + RLS update
+// policy) — which the on-demand daemon on the scraper machine polls for,
+// fetches the real cost from the wholesaler portal, and writes cost_price
+// back (service-role key, bypassing RLS). Everything else stays scraper-only.
 let supplierStockRows=[];
 let supplierStockSearchTerm='';
 let supplierStockSupplierFilter='all';
@@ -4416,6 +4771,32 @@ function supplierStockAgeLabel(iso){
   return Math.round(hours/24)+'d ago';
 }
 
+// Cost cell when the price isn't known yet: a "Get cost" button that flags
+// the row for the on-demand daemon (cost-server.js on the scraper machine
+// polls cost_requested_at every ~20s, fetches the price from the wholesaler
+// portal, writes cost_price and clears the flag). Once flagged it renders a
+// static "Requested" label instead — no double-clicking, and the state
+// survives re-renders because we also patch the in-memory row.
+function supplierCostRequestCell(r){
+  if(r.cost_requested_at)return `<span style="font-size:12px;color:var(--text-secondary)">Requested</span>`;
+  return `<button class="btn-link" style="font-size:12px;padding:0" onclick="requestSupplierCost('${esc(r.supplier)}','${esc(r.sku)}',this)">Get cost</button>`;
+}
+
+async function requestSupplierCost(supplier,sku,btn){
+  if(btn){btn.disabled=true;btn.textContent='…'}
+  try{
+    const {error}=await sb.from('desk_supplier_stock').update({cost_requested_at:new Date().toISOString()}).eq('supplier',supplier).eq('sku',sku);
+    if(error)throw error;
+    const row=supplierStockRows.find(x=>x.supplier===supplier&&x.sku===sku);
+    if(row)row.cost_requested_at=new Date().toISOString();
+    if(btn)btn.textContent='Requested';
+    showToast('Cost requested — usually updates within a couple of minutes');
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='Get cost'}
+    showToast('Could not request cost');
+  }
+}
+
 function filteredSupplierStockRows(){
   const term=supplierStockSearchTerm.trim().toLowerCase().replace(/[^a-z0-9]/g,'');
   return supplierStockRows.filter(r=>{
@@ -4429,7 +4810,6 @@ function filteredSupplierStockRows(){
 async function renderSupplierStockView(){
   const main=document.getElementById('main');
   main.classList.add('full-width');
-  main.innerHTML=`<div class="empty-state">Loading…</div>`;
   await loadSupplierStockRows();
   renderSupplierStockList();
 }
@@ -4470,7 +4850,7 @@ function renderSupplierStockList(){
     h+=`<div class="invoice-items-wrap"><table class="invoice-items-table"><thead><tr><th>Size</th><th>Brand</th><th>Model</th><th>SKU</th><th>Supplier</th><th style="text-align:right">Cost</th><th style="text-align:right">Qty</th><th>Location</th><th>Flags</th><th>Updated</th></tr></thead><tbody>`;
     list.forEach(r=>{
       const flags=[r.is_discontinued?'<span class="status-badge on_hold">Discontinued</span>':'',r.is_on_sale?'<span class="status-badge finished">On sale</span>':''].filter(Boolean).join(' ');
-      h+=`<tr><td>${esc(r.size||r.stripped_size||'—')}</td><td>${esc(r.brand||'—')}</td><td>${esc(r.model||'—')}</td><td>${esc(r.sku||'—')}</td><td>${esc(SUPPLIER_STOCK_LABELS[r.supplier]||r.supplier)}</td><td style="text-align:right">${r.cost_price!=null?'$'+Number(r.cost_price).toFixed(2):'—'}</td><td style="text-align:right">${r.available_qty!=null?r.available_qty:'—'}</td><td style="font-size:12px">${supplierStockBranchLabel(r.branch_stock)}</td><td>${flags||'—'}</td><td style="font-size:12px;color:var(--text-secondary)">${supplierStockAgeLabel(r.scraped_at)}</td></tr>`;
+      h+=`<tr><td>${esc(r.size||r.stripped_size||'—')}</td><td>${esc(r.brand||'—')}</td><td>${esc(r.model||'—')}</td><td>${esc(r.sku||'—')}</td><td>${esc(SUPPLIER_STOCK_LABELS[r.supplier]||r.supplier)}</td><td style="text-align:right">${r.cost_price!=null?'$'+Number(r.cost_price).toFixed(2):supplierCostRequestCell(r)}</td><td style="text-align:right">${r.available_qty!=null?r.available_qty:'—'}</td><td style="font-size:12px">${supplierStockBranchLabel(r.branch_stock)}</td><td>${flags||'—'}</td><td style="font-size:12px;color:var(--text-secondary)">${supplierStockAgeLabel(r.scraped_at)}</td></tr>`;
     });
     h+='</tbody></table></div>';
   }
@@ -4483,17 +4863,13 @@ function renderSupplierStockList(){
 // estimate-vs-actual columns.
 async function loadTimesheets(){
   try{
-    const {data,error}=await sb.from('desk_timesheets')
+    timesheets=await fetchAllRows(()=>sb.from('desk_timesheets')
       .select('*,employee:desk_employees(name),job:desk_jobs(job_type,customer:desk_customers(name))')
-      .order('work_date',{ascending:false});
-    if(error)throw error;
-    timesheets=data||[];
+      .order('work_date',{ascending:false}).order('id'));
   }catch(e){timesheets=[];showToast('Could not load timesheets')}
 }
 
 async function renderTimesheetsView(){
-  const main=document.getElementById('main');
-  main.innerHTML=`<div class="empty-state">Loading…</div>`;
   timesheetsRangePreset='week';
   const r=paymentsPresetRange('week');
   timesheetsFrom=r.from;timesheetsTo=r.to;
@@ -4671,17 +5047,13 @@ let reviews=[];
 
 async function loadStockAdjustments(){
   try{
-    const {data,error}=await sb.from('desk_stock_adjustments').select('*,stock:desk_stock(name,sku)').order('adjusted_at',{ascending:false});
-    if(error)throw error;
-    stockAdjustments=data||[];
+    stockAdjustments=await fetchAllRows(()=>sb.from('desk_stock_adjustments').select('*,stock:desk_stock(name,sku)').order('adjusted_at',{ascending:false}).order('id'));
   }catch(e){stockAdjustments=[]}
 }
 
 async function loadReviews(){
   try{
-    const {data,error}=await sb.from('desk_reviews').select('*,customer:desk_customers(name),job:desk_jobs(job_type)').order('created_at',{ascending:false});
-    if(error)throw error;
-    reviews=data||[];
+    reviews=await fetchAllRows(()=>sb.from('desk_reviews').select('*,customer:desk_customers(name),job:desk_jobs(job_type)').order('created_at',{ascending:false}).order('id'));
   }catch(e){reviews=[]}
 }
 
@@ -4704,11 +5076,9 @@ function reportColorPalette(){return [cssVar('--chart-1'),cssVar('--chart-2'),cs
 
 async function loadReportInvoices(){
   try{
-    const {data,error}=await sb.from('desk_invoices')
+    reportInvoices=await fetchAllRows(()=>sb.from('desk_invoices')
       .select('*,customer:desk_customers(id,name),vehicle:desk_vehicles(id,make,model),items:desk_invoice_items(id,description,qty,unit_price,stock_id,stock:desk_stock(buy_price,is_physical))')
-      .order('issue_date',{ascending:false});
-    if(error)throw error;
-    reportInvoices=data||[];
+      .order('issue_date',{ascending:false}).order('id'));
   }catch(e){reportInvoices=[];showToast('Could not load report data')}
 }
 
@@ -4747,8 +5117,6 @@ function reportFilteredPayments(){
 }
 
 async function renderReportsView(){
-  const main=document.getElementById('main');
-  main.innerHTML=`<div class="empty-state">Loading…</div>`;
   reportsRangePreset='month';
   const r=paymentsPresetRange('month');
   reportsFrom=r.from;reportsTo=r.to;
@@ -5611,20 +5979,20 @@ async function removeWorkshopLogo(){
 }
 
 async function renderSettingsView(){
-  const main=document.getElementById('main');
-  main.innerHTML=`<div class="empty-state">Loading…</div>`;
-  await loadInvoiceTemplateSetting();
-  await loadWorkshopDetailsSetting();
-  await loadServiceTypes();
-  await loadJobTypes();
-  await loadTrackedTyreSizes();
-  await loadJobSources();
-  await loadDiaryHoursSetting();
-  await loadXeroAccounts();
-  await loadXeroPaymentAccountMap();
-  await loadEmployees();
-  await loadMessagingStatus();
-  await loadMessagingSettings();
+  await Promise.all([
+    loadInvoiceTemplateSetting(),
+    loadWorkshopDetailsSetting(),
+    loadServiceTypes(),
+    loadJobTypes(),
+    loadTrackedTyreSizes(),
+    loadJobSources(),
+    loadDiaryHoursSetting(),
+    loadXeroAccounts(),
+    loadXeroPaymentAccountMap(),
+    loadEmployees(),
+    loadMessagingStatus(),
+    loadMessagingSettings()
+  ]);
   renderSettingsPage();
 }
 
@@ -5692,12 +6060,14 @@ function renderSettingsPage(){
   </div>
   <div class="panel" style="max-width:700px;margin-top:var(--space-4)">
     <div class="panel-head"><div class="panel-title">Job Types</div><button class="btn-secondary" onclick="openJobTypeModal()">+ Add job type</button></div>
-    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:var(--space-2)">These populate the Job Type dropdown when creating a New Job. Deactivate ones you no longer use instead of deleting — existing jobs keep their type either way. Set a service interval to auto-suggest a next-service date when a job of this type is finished.</div>
+    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:var(--space-2)">These populate the Job Type dropdown when creating a New Job. Deactivate ones you no longer use instead of deleting — existing jobs keep their type either way. Set a service interval to auto-suggest a next-service date when a job of this type is finished. Check sheet sets the checklist copied onto each new job; Items sets the default invoice lines.</div>
     ${jobTypes.length?jobTypes.map(t=>`
       <div class="field-row" style="align-items:center">
         <span style="display:flex;align-items:center;gap:var(--space-2);font-weight:600">${esc(t.name)}${t.is_active?'':' <span class="status-badge draft">Inactive</span>'}</span>
         <span style="display:flex;align-items:center;gap:var(--space-3)">
           <span style="font-size:12px;color:var(--text-secondary)">${serviceIntervalLabel(t)}</span>
+          <button class="btn-link" onclick="openCheckSheetEditor('${t.id}')">Check sheet</button>
+          <button class="btn-link" onclick="openJobTypeItemsEditor('${t.id}')">Items</button>
           <button class="btn-link" onclick="openJobTypeModal('${t.id}')">Edit</button>
           <button class="btn-link" onclick="toggleJobTypeActive('${t.id}',${!t.is_active})">${t.is_active?'Deactivate':'Activate'}</button>
         </span>
@@ -6009,6 +6379,311 @@ async function toggleJobTypeActive(id,active){
   }catch(e){showToast('Could not update')}
 }
 
+// ── Job type check sheet & default invoice items ────────────
+// Two per-job-type editors, opened from the Job Types settings panel. Both
+// reuse the invoice-items table idiom (drag handles, header rows, inline
+// inputs) against their own tables:
+//   desk_checklist_templates   → copied onto each NEW job by the DB trigger
+//   desk_job_type_invoice_items → seeded onto invoices by createDocFromJob()
+let checkSheetJobTypeId=null;
+let checkSheetItems=[];
+let jtItemsJobTypeId=null;
+let jtItems=[];
+
+async function openCheckSheetEditor(jobTypeId){
+  checkSheetJobTypeId=jobTypeId;
+  await reloadCheckSheet();
+}
+
+async function reloadCheckSheet(){
+  const t=jobTypes.find(x=>x.id===checkSheetJobTypeId);
+  if(!t){closeModal();return}
+  try{
+    const {data,error}=await sb.from('desk_checklist_templates').select('*').eq('job_type_id',t.id).order('sort_order').order('created_at');
+    if(error)throw error;
+    checkSheetItems=data||[];
+  }catch(e){checkSheetItems=[];showToast('Could not load check sheet')}
+  renderCheckSheetModal();
+}
+
+function renderCheckSheetModal(){
+  const t=jobTypes.find(x=>x.id===checkSheetJobTypeId);
+  if(!t)return;
+  closeModal();
+  const html=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal-card modal-wide">
+      <div class="modal-title">Check sheet — ${esc(t.name)}</div>
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:var(--space-3)">Copied onto every new ${esc(t.name)} job — jobs already created keep the check sheet they were given. Headers are section labels; staff can't tick them.</div>
+      <div class="invoice-items-wrap">
+      <table class="invoice-items-table">
+        <thead><tr><th class="drag-col"></th><th>Checklist item</th><th class="del-col"></th></tr></thead>
+        <tbody>
+          ${checkSheetItems.map(it=>it.is_header?`<tr class="invoice-header-row" draggable="true" data-item-id="${it.id}"
+              ondragstart="onJtDragStart(event,'${it.id}')"
+              ondragover="onJtDragOver(event)"
+              ondragleave="onJtDragLeave(event)"
+              ondrop="onJtDrop(event,'${it.id}','checksheet')"
+              ondragend="onJtDragEnd(event)">
+            <td class="drag-col"><span class="drag-handle" title="Drag to reorder">⋮⋮</span></td>
+            <td class="invoice-header-cell"><input class="invoice-header-input" value="${esc(it.label)}" placeholder="Section header…" onchange="updateChecklistTemplateItem('${it.id}',this.value)"></td>
+            <td class="del-col"><button class="btn-danger-link" onclick="deleteChecklistTemplateItem('${it.id}')">✕</button></td>
+          </tr>`:`<tr draggable="true" data-item-id="${it.id}"
+              ondragstart="onJtDragStart(event,'${it.id}')"
+              ondragover="onJtDragOver(event)"
+              ondragleave="onJtDragLeave(event)"
+              ondrop="onJtDrop(event,'${it.id}','checksheet')"
+              ondragend="onJtDragEnd(event)">
+            <td class="drag-col"><span class="drag-handle" title="Drag to reorder">⋮⋮</span></td>
+            <td><input value="${esc(it.label)}" placeholder="e.g. Torque wheel nuts" onchange="updateChecklistTemplateItem('${it.id}',this.value)"></td>
+            <td class="del-col"><button class="btn-danger-link" onclick="deleteChecklistTemplateItem('${it.id}')">✕</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      </div>
+      ${checkSheetItems.length?'':'<div class="list-empty">No items yet — add work items below, with headers to group them.</div>'}
+      <div style="display:flex;gap:var(--space-3);margin-top:var(--space-2)">
+        <button class="btn-link" onclick="addChecklistTemplateItem(false)">+ Work</button>
+        <button class="btn-link" onclick="addChecklistTemplateItem(true)">+ Header</button>
+      </div>
+      <div class="form-actions">
+        <button class="btn-primary" onclick="closeModal()">Done</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
+async function addChecklistTemplateItem(isHeader){
+  try{
+    const {error}=await sb.from('desk_checklist_templates').insert({job_type_id:checkSheetJobTypeId,label:isHeader?'New section':'New item',is_header:isHeader,sort_order:checkSheetItems.length});
+    if(error)throw error;
+    await reloadCheckSheet();
+  }catch(e){showToast('Could not add item')}
+}
+
+async function updateChecklistTemplateItem(itemId,label){
+  try{
+    const {error}=await sb.from('desk_checklist_templates').update({label:(label||'').trim()||'Item'}).eq('id',itemId);
+    if(error)throw error;
+    await reloadCheckSheet();
+  }catch(e){showToast('Could not update item')}
+}
+
+async function deleteChecklistTemplateItem(itemId){
+  try{
+    const {error}=await sb.from('desk_checklist_templates').delete().eq('id',itemId);
+    if(error)throw error;
+    await reloadCheckSheet();
+  }catch(e){showToast('Could not delete item')}
+}
+
+async function openJobTypeItemsEditor(jobTypeId){
+  jtItemsJobTypeId=jobTypeId;
+  await loadStockItems();
+  await reloadJobTypeItems();
+}
+
+async function reloadJobTypeItems(){
+  const t=jobTypes.find(x=>x.id===jtItemsJobTypeId);
+  if(!t){closeModal();return}
+  try{
+    const {data,error}=await sb.from('desk_job_type_invoice_items').select('*').eq('job_type_id',t.id).order('sort_order').order('created_at');
+    if(error)throw error;
+    jtItems=data||[];
+  }catch(e){jtItems=[];showToast('Could not load items')}
+  renderJobTypeItemsModal();
+}
+
+function renderJobTypeItemsModal(){
+  const t=jobTypes.find(x=>x.id===jtItemsJobTypeId);
+  if(!t)return;
+  closeModal();
+  // Per-header subtotals, same walk as the invoice editor.
+  let curHeader=null; const hdrTotals={};
+  jtItems.forEach(it=>{
+    if(it.is_header){curHeader=it.id;hdrTotals[it.id]=0}
+    else if(curHeader)hdrTotals[curHeader]=(hdrTotals[curHeader]||0)+(Number(it.qty)||0)*(Number(it.unit_price)||0);
+  });
+  const html=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal-card modal-wide">
+      <div class="modal-title">Invoice items — ${esc(t.name)}</div>
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:var(--space-3)">Seeded onto every invoice or quote created from a ${esc(t.name)} job — prices can still be edited on the document itself.</div>
+      <div class="invoice-items-wrap">
+      <table class="invoice-items-table">
+        <thead><tr><th class="drag-col"></th><th>Description</th><th class="qty-col">Qty</th><th class="price-col">Unit Price</th><th class="total-col">Total</th><th class="tax-col">Tax</th><th class="del-col"></th></tr></thead>
+        <tbody>
+          ${jtItems.map(it=>it.is_header?`<tr class="invoice-header-row" draggable="true" data-item-id="${it.id}"
+              ondragstart="onJtDragStart(event,'${it.id}')"
+              ondragover="onJtDragOver(event)"
+              ondragleave="onJtDragLeave(event)"
+              ondrop="onJtDrop(event,'${it.id}','items')"
+              ondragend="onJtDragEnd(event)">
+            <td class="drag-col"><span class="drag-handle" title="Drag to reorder">⋮⋮</span></td>
+            <td colspan="5" class="invoice-header-cell">
+              <input class="invoice-header-input" value="${esc(it.description)}" placeholder="Section header…" onchange="updateJobTypeItem('${it.id}','description',this.value)">
+              <span class="header-subtotal">$${hdrTotals[it.id].toFixed(2)}</span>
+            </td>
+            <td class="del-col"><button class="btn-danger-link" onclick="deleteJobTypeItem('${it.id}')">✕</button></td>
+          </tr>`:`<tr draggable="true" data-item-id="${it.id}"
+              ondragstart="onJtDragStart(event,'${it.id}')"
+              ondragover="onJtDragOver(event)"
+              ondragleave="onJtDragLeave(event)"
+              ondrop="onJtDrop(event,'${it.id}','items')"
+              ondragend="onJtDragEnd(event)">
+            <td class="drag-col"><span class="drag-handle" title="Drag to reorder">⋮⋮</span></td>
+            <td><input value="${esc(it.description)}" onchange="updateJobTypeItem('${it.id}','description',this.value)"></td>
+            <td class="qty-col"><input type="number" step="1" min="1" value="${it.qty}" onchange="updateJobTypeItem('${it.id}','qty',this.value)"></td>
+            <td class="price-col"><input type="number" step="0.01" value="${it.unit_price}" onchange="updateJobTypeItem('${it.id}','unit_price',this.value)"></td>
+            <td class="total-col">$${(it.qty*it.unit_price).toFixed(2)}</td>
+            <td class="tax-col"><select onchange="updateJobTypeItem('${it.id}','tax_type',this.value)">
+              ${XERO_TAX_TYPES.map(x=>`<option value="${esc(x)}" ${(it.tax_type||'GST on Income')===x?'selected':''}>${esc(x)}</option>`).join('')}
+            </select></td>
+            <td class="del-col"><button class="btn-danger-link" onclick="deleteJobTypeItem('${it.id}')">✕</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      </div>
+      ${jtItems.length?'':'<div class="list-empty">No default items yet — invoices for this job type still start with a single blank line.</div>'}
+      <div style="display:flex;gap:var(--space-3);margin-top:var(--space-2)">
+        <button class="btn-link" onclick="toggleJobTypeItemPicker()">+ Add line item</button>
+        <button class="btn-link" onclick="addJobTypeItemHeader()">+ Header</button>
+      </div>
+      <div id="jt-item-picker-area"></div>
+      <div class="form-actions">
+        <button class="btn-primary" onclick="closeModal()">Done</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
+function toggleJobTypeItemPicker(){
+  const el=document.getElementById('jt-item-picker-area');
+  if(!el)return;
+  if(el.innerHTML.trim()){el.innerHTML='';return}
+  el.innerHTML=`<div class="tag-picker">
+    <input type="text" class="form-input" id="jt-item-search" placeholder="Search inventory…" oninput="onJobTypeItemSearch(this.value)" style="margin-bottom:var(--space-2)">
+    <div id="jt-item-search-results"></div>
+    <div class="tag-create-row" style="border-top:none;padding-top:0">
+      <button class="btn-link" onclick="addBlankJobTypeItem()">+ Add blank line item instead</button>
+    </div>
+  </div>`;
+  document.getElementById('jt-item-search').focus();
+}
+
+function onJobTypeItemSearch(term){
+  const t=term.trim().toLowerCase();
+  const results=document.getElementById('jt-item-search-results');
+  if(!t){results.innerHTML='';return}
+  const matches=stockItems.filter(s=>s.is_active&&(s.name.toLowerCase().includes(t)||(s.sku||'').toLowerCase().includes(t))).slice(0,8);
+  results.innerHTML=matches.length?matches.map(s=>`<div class="autocomplete-item" onclick="addStockJobTypeItem('${s.id}')">${s.is_physical?'📦':'🔧'} ${esc(s.name)}${s.sku?' ('+esc(s.sku)+')':''} — $${Number(s.sell_price).toFixed(2)}</div>`).join(''):'<div class="autocomplete-item" style="color:var(--text-secondary)">No matches</div>';
+}
+
+async function addStockJobTypeItem(stockId){
+  const s=stockItems.find(x=>x.id===stockId);
+  if(!s)return;
+  try{
+    const {error}=await sb.from('desk_job_type_invoice_items').insert({job_type_id:jtItemsJobTypeId,description:s.name,qty:1,unit_price:s.sell_price,stock_id:s.id,sort_order:jtItems.length});
+    if(error)throw error;
+    await reloadJobTypeItems();
+  }catch(e){showToast('Could not add item')}
+}
+
+async function addBlankJobTypeItem(){
+  try{
+    const {error}=await sb.from('desk_job_type_invoice_items').insert({job_type_id:jtItemsJobTypeId,description:'New item',qty:1,unit_price:0,sort_order:jtItems.length});
+    if(error)throw error;
+    await reloadJobTypeItems();
+  }catch(e){showToast('Could not add item')}
+}
+
+async function addJobTypeItemHeader(){
+  try{
+    const {error}=await sb.from('desk_job_type_invoice_items').insert({job_type_id:jtItemsJobTypeId,description:'New section',is_header:true,sort_order:jtItems.length});
+    if(error)throw error;
+    await reloadJobTypeItems();
+  }catch(e){showToast('Could not add header')}
+}
+
+async function updateJobTypeItem(itemId,field,value){
+  let v;
+  if(field==='description')v=(value||'').trim()||'Item';
+  else if(field==='tax_type')v=value||'GST on Income';
+  else if(field==='qty')v=Math.max(1,Math.round(parseFloat(value))||1);
+  else v=parseFloat(value)||0;
+  try{
+    const {error}=await sb.from('desk_job_type_invoice_items').update({[field]:v}).eq('id',itemId);
+    if(error)throw error;
+    await reloadJobTypeItems();
+  }catch(e){showToast('Could not update item')}
+}
+
+async function deleteJobTypeItem(itemId){
+  try{
+    const {error}=await sb.from('desk_job_type_invoice_items').delete().eq('id',itemId);
+    if(error)throw error;
+    await reloadJobTypeItems();
+  }catch(e){showToast('Could not delete item')}
+}
+
+// Shared drag-and-drop for the two editors above — only one modal is open at
+// a time, so one dragged-id and a 'checksheet'/'items' switch on drop covers
+// both. Mirrors the invoice editor's handlers but renumbers its own table.
+let jtDragId=null;
+
+function onJtDragStart(e,itemId){
+  jtDragId=itemId;
+  e.dataTransfer.effectAllowed='move';
+  e.dataTransfer.setData('text/plain',itemId);
+  e.currentTarget.classList.add('dragging');
+}
+
+function onJtDragOver(e){
+  e.preventDefault();
+  e.dataTransfer.dropEffect='move';
+  e.currentTarget.classList.add('drag-over');
+}
+
+function onJtDragLeave(e){
+  e.currentTarget.classList.remove('drag-over');
+}
+
+async function onJtDrop(e,targetId,kind){
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if(!jtDragId||jtDragId===targetId){jtDragId=null;return}
+  if(kind==='checksheet')await reorderEditorRows('desk_checklist_templates',checkSheetItems,jtDragId,targetId,reloadCheckSheet);
+  else await reorderEditorRows('desk_job_type_invoice_items',jtItems,jtDragId,targetId,reloadJobTypeItems);
+  jtDragId=null;
+}
+
+function onJtDragEnd(e){
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
+  jtDragId=null;
+}
+
+// Moves dragId to targetId's position and renumbers sort_order for the rows
+// in between — same algorithm as reorderInvoiceItems.
+async function reorderEditorRows(table,rows,dragId,targetId,reload){
+  const items=[...rows];
+  const dragIdx=items.findIndex(it=>it.id===dragId);
+  const targetIdx=items.findIndex(it=>it.id===targetId);
+  if(dragIdx===-1||targetIdx===-1)return;
+  const [moved]=items.splice(dragIdx,1);
+  items.splice(targetIdx,0,moved);
+  const updates=[];
+  items.forEach((it,i)=>{if(it.sort_order!==i)updates.push({id:it.id,sort_order:i})});
+  if(!updates.length)return;
+  try{
+    for(const u of updates){
+      const {error}=await sb.from(table).update({sort_order:u.sort_order}).eq('id',u.id);
+      if(error)throw error;
+    }
+    await reload();
+  }catch(e){showToast('Could not reorder')}
+}
+
 // ── Tracked Tyre Sizes (Supplier Stock scraper config) ───────
 let trackedTyreSizes=[];
 async function loadTrackedTyreSizes(){
@@ -6196,17 +6871,18 @@ async function selectInvoiceTemplate(t){
 }
 
 async function loadJobs(){
-  try{
-    const {data,error}=await sb.from('desk_jobs')
-      .select('*,customer:desk_customers(name,mobile,phone),vehicle:desk_vehicles(rego,make,model)')
-      .eq('is_deleted',false)
-      .order('booked_at',{ascending:true,nullsFirst:false});
-    if(error)throw error;
-    jobs=data||[];
-  }catch(e){jobs=[];showToast('Could not load jobs')}
-  await loadTags();
-  await loadJobTagsMap();
-  await loadJobNotesMap();
+  // jobs, tags and the tag/note maps are independent tables — fetch them
+  // concurrently rather than one after another (this runs on every Diary and
+  // Jobs open).
+  const jobsFetch=(async()=>{
+    try{
+      jobs=await fetchAllRows(()=>sb.from('desk_jobs')
+        .select('*,customer:desk_customers(name,mobile,phone),vehicle:desk_vehicles(rego,make,model)')
+        .eq('is_deleted',false)
+        .order('booked_at',{ascending:true,nullsFirst:false}).order('id'));
+    }catch(e){jobs=[];showToast('Could not load jobs')}
+  })();
+  await Promise.all([jobsFetch,loadTags(),loadJobTagsMap(),loadJobNotesMap()]);
 }
 
 async function loadTags(){
@@ -6220,8 +6896,7 @@ async function loadTags(){
 async function loadJobTagsMap(){
   jobTagsMap={};
   try{
-    const {data,error}=await sb.from('desk_job_tags').select('job_id,tag:desk_tags(id,name,color)');
-    if(error)throw error;
+    const data=await fetchAllRows(()=>sb.from('desk_job_tags').select('job_id,tag:desk_tags(id,name,color)').order('job_id').order('tag_id'));
     (data||[]).forEach(row=>{
       if(!row.tag)return;
       if(!jobTagsMap[row.job_id])jobTagsMap[row.job_id]=[];
@@ -6235,8 +6910,7 @@ async function loadJobTagsMap(){
 async function loadJobNotesMap(){
   jobNotesMap={};
   try{
-    const {data,error}=await sb.from('desk_job_notes').select('job_id,body,created_at,is_office_only').order('created_at');
-    if(error)throw error;
+    const data=await fetchAllRows(()=>sb.from('desk_job_notes').select('job_id,body,created_at,is_office_only,id').order('created_at').order('id'));
     (data||[]).forEach(row=>{
       if(!jobNotesMap[row.job_id])jobNotesMap[row.job_id]=[];
       jobNotesMap[row.job_id].push(row);
@@ -6311,11 +6985,12 @@ function renderTagsSection(jobId){
   </div>`;
 }
 
+async function loadJobsData(){
+  await Promise.all([customers.length?null:loadCustomers(),loadJobs()]);
+}
+
 async function renderJobsView(){
-  const main=document.getElementById('main');
-  main.innerHTML=`<div class="empty-state">Loading…</div>`;
-  if(!customers.length) await loadCustomers();
-  await loadJobs();
+  await loadJobsData();
   if(selectedJobId){await renderJobDetail(selectedJobId)}else{renderJobList()}
 }
 
@@ -6398,9 +7073,7 @@ function renderJobList(){
 let deletedJobs=[];
 async function loadDeletedJobs(){
   try{
-    const {data,error}=await sb.from('desk_jobs').select('*,customer:desk_customers(name),vehicle:desk_vehicles(rego,make,model)').eq('is_deleted',true).order('deleted_at',{ascending:false});
-    if(error)throw error;
-    deletedJobs=data||[];
+    deletedJobs=await fetchAllRows(()=>sb.from('desk_jobs').select('*,customer:desk_customers(name),vehicle:desk_vehicles(rego,make,model)').eq('is_deleted',true).order('deleted_at',{ascending:false}).order('id'));
   }catch(e){deletedJobs=[];showToast('Could not load deleted jobs')}
 }
 
@@ -6415,12 +7088,10 @@ async function setJobFilter(f){
 // distinct from the automatic service-due reminders) ──────────
 async function loadFollowUps(){
   try{
-    const {data,error}=await sb.from('desk_follow_ups')
+    followUps=await fetchAllRows(()=>sb.from('desk_follow_ups')
       .select('*,customer:desk_customers(name,mobile,phone,email),job:desk_jobs(job_type),messages:desk_messages(id,channel,status)')
       .order('due_date',{ascending:true,nullsFirst:false})
-      .order('created_at',{ascending:false});
-    if(error)throw error;
-    followUps=data||[];
+      .order('created_at',{ascending:false}).order('id'));
   }catch(e){followUps=[];showToast('Could not load follow ups')}
 }
 
@@ -6592,10 +7263,13 @@ function jobInvoiceSlotHtml(panelHtml,jobId){
 
 async function renderJobDetail(id){
   const main=document.getElementById('main');
-  if(!Object.keys(jobLegsMap).length)await loadJobLegsMap();
-  if(!jobSources.length)await loadJobSources();
-  await loadJobNotes(id);
-  const relatedInvoices=await loadJobInvoices(id);
+  const [,,,,relatedInvoices]=await Promise.all([
+    Object.keys(jobLegsMap).length?null:loadJobLegsMap(),
+    jobSources.length?null:loadJobSources(),
+    loadJobNotes(id),
+    loadJobChecklist(id),
+    loadJobInvoices(id)
+  ]);
   const j=jobs.find(x=>x.id===id);
   if(!j){selectedJobId=null;renderJobList();return}
   // Full-page (re)render always reflects current state correctly, including
@@ -6623,6 +7297,7 @@ async function renderJobDetail(id){
       <div class="job-status-actions">
         ${JOB_STATUS_ORDER.map(s=>`<button class="${s===j.status?'current':''}" ${s===j.status?'disabled':''} onclick="setJobStatus('${j.id}','${s}')">${JOB_STATUS_LABELS[s]}</button>`).join('')}
       </div>
+      ${renderChecklistSection(j.id)}
       <label class="form-label">Customer status note <span style="font-weight:400;color:var(--text-secondary);text-transform:none;letter-spacing:0">— shown to the customer in the tracking portal, e.g. why a job is on hold</span></label>
       <input class="form-input" value="${esc(j.customer_status_note||'')}" placeholder="e.g. Waiting on brake pads — ETA Thursday" onchange="updateJobField('${j.id}','customer_status_note',this.value.trim()||null)">
       <div style="display:flex;gap:var(--space-2);margin-bottom:var(--space-4);flex-wrap:wrap">
@@ -6672,6 +7347,109 @@ async function renderJobDetail(id){
   </div>`;
   main.classList.add('full-width');
   main.innerHTML=h;
+}
+
+// ── Job checklist (desktop view of the copied check sheet) ──
+// Rows come from desk_job_checklist_items, copied onto the job at creation
+// from the job type's check sheet. Ticking here and in the staff app writes
+// the same rows, so both surfaces stay in sync.
+let jobChecklistItems=[];
+let jobChecklistUploads={}; // checklist_item_id → [{id,file_name,url,isImage}]
+
+async function loadJobChecklist(jobId){
+  try{
+    const {data,error}=await sb.from('desk_job_checklist_items').select('*').eq('job_id',jobId).order('sort_order').order('created_at');
+    if(error)throw error;
+    jobChecklistItems=data||[];
+    jobChecklistUploads=await loadChecklistUploads(jobChecklistItems.map(i=>i.id));
+  }catch(e){jobChecklistItems=[];jobChecklistUploads={}}
+}
+
+// Upload rows for a set of checklist items, each resolved to a short-lived
+// signed URL — the bucket is private, so a plain public URL won't load.
+async function loadChecklistUploads(itemIds){
+  if(!itemIds.length)return {};
+  try{
+    const {data,error}=await sb.from('desk_checklist_item_uploads').select('*').in('checklist_item_id',itemIds).order('created_at');
+    if(error)throw error;
+    const rows=data||[];
+    const urls={};
+    if(rows.length){
+      const {data:signed,error:signErr}=await sb.storage.from('desk-checklist-uploads').createSignedUrls(rows.map(r=>r.file_path),3600);
+      if(signErr)throw signErr;
+      (signed||[]).forEach(s=>{if(s.path&&s.signedUrl)urls[s.path]=s.signedUrl});
+    }
+    const map={};
+    rows.forEach(r=>{
+      (map[r.checklist_item_id]=map[r.checklist_item_id]||[]).push({id:r.id,file_path:r.file_path,file_name:r.file_name,url:urls[r.file_path]||'',isImage:(r.content_type||'').startsWith('image/')});
+    });
+    return map;
+  }catch(e){return {}}
+}
+
+function renderChecklistSection(jobId){
+  const work=jobChecklistItems.filter(i=>!i.is_header);
+  const done=work.filter(i=>i.is_complete).length;
+  return `<div class="tag-section">
+    <div class="panel-head"><div class="panel-title" style="font-size:13px">Checklist</div>${work.length?`<span style="font-size:12px;color:var(--text-secondary)">${done}/${work.length} done</span>`:''}</div>
+    <div class="job-checklist">
+      ${jobChecklistItems.length?jobChecklistItems.map(c=>c.is_header?`<div class="job-checklist-header">${esc(c.label)}</div>`:`
+        <div class="job-checklist-item ${c.is_complete?'done':''}">
+          <input type="checkbox" id="jchk-${c.id}" ${c.is_complete?'checked':''} onchange="toggleJobChecklistItem('${c.id}',this.checked,'${jobId}')">
+          <label for="jchk-${c.id}">${esc(c.label)}${c.is_complete&&c.completed_by?` <span style="color:var(--text-muted);font-size:11px">· ${esc(c.completed_by)}</span>`:''}</label>
+          <span class="job-checklist-uploads">
+            ${(jobChecklistUploads[c.id]||[]).map(u=>`<span class="job-checklist-upload">${u.isImage&&u.url?`<a href="${u.url}" target="_blank" rel="noopener" title="${esc(u.file_name)}"><img class="job-checklist-thumb" src="${u.url}" alt="${esc(u.file_name)}"></a>`:`<a class="job-checklist-file" href="${u.url}" target="_blank" rel="noopener" title="${esc(u.file_name)}">📄 ${esc(u.file_name)}</a>`}<button class="job-checklist-upload-del" title="Delete file" onclick="deleteChecklistUpload('${u.id}','${u.file_path}','${jobId}')">✕</button></span>`).join('')}
+            <label class="job-checklist-upload-btn" title="Add photo or file">📷<input type="file" accept="image/*,application/pdf" style="display:none" onchange="onChecklistItemUpload('${c.id}','${jobId}',this)"></label>
+          </span>
+        </div>`).join(''):'<div style="font-size:12px;color:var(--text-secondary);padding:var(--space-2) 0">No checklist on this job — check sheets are copied from the job type when a job is created (Settings → Job Types → Check sheet).</div>'}
+    </div>
+  </div>`;
+}
+
+async function toggleJobChecklistItem(itemId,checked,jobId){
+  try{
+    const {error}=await sb.from('desk_job_checklist_items').update({
+      is_complete:checked,
+      completed_by:checked?(currentUser?.name||null):null,
+      completed_at:checked?new Date().toISOString():null
+    }).eq('id',itemId);
+    if(error)throw error;
+    await renderJobDetail(jobId);
+  }catch(e){showToast('Could not update checklist')}
+}
+
+// Photo/PDF attached to one checklist item. On mobile browsers the file
+// picker offers the camera directly; desktop gets a normal file dialog.
+async function onChecklistItemUpload(itemId,jobId,input){
+  const file=input.files&&input.files[0];
+  if(!file)return;
+  if(!file.type.startsWith('image/')&&file.type!=='application/pdf'){showToast('Photos or PDFs only');input.value='';return}
+  if(file.size>10*1024*1024){showToast('File must be under 10MB');input.value='';return}
+  const safeName=(file.name.replace(/[^\w.\-]+/g,'_')||'upload').slice(-60);
+  const path=jobId+'/'+itemId+'/'+Date.now()+'-'+safeName;
+  try{
+    showToast('Uploading…');
+    const {error}=await sb.storage.from('desk-checklist-uploads').upload(path,file,{contentType:file.type});
+    if(error)throw error;
+    const {error:rowErr}=await sb.from('desk_checklist_item_uploads').insert({checklist_item_id:itemId,file_path:path,file_name:file.name,content_type:file.type,uploaded_by:currentUser?.name||null});
+    if(rowErr)throw rowErr;
+    showToast('Uploaded');
+    await renderJobDetail(jobId);
+  }catch(e){showToast('Could not upload')}
+}
+
+// Removes both the storage object and its tracking row — one without the
+// other would leave orphan files or dead thumbnails behind.
+async function deleteChecklistUpload(uploadId,filePath,jobId){
+  if(!confirm('Delete this file?'))return;
+  try{
+    const {error}=await sb.storage.from('desk-checklist-uploads').remove([filePath]);
+    if(error)throw error;
+    const {error:rowErr}=await sb.from('desk_checklist_item_uploads').delete().eq('id',uploadId);
+    if(rowErr)throw rowErr;
+    showToast('Deleted');
+    await renderJobDetail(jobId);
+  }catch(e){showToast('Could not delete')}
 }
 
 function jobShortRef(id){return id.slice(0,8).toUpperCase()}
@@ -6875,8 +7653,7 @@ async function loadJobSources(){
 let jobLegsMap={};
 async function loadJobLegsMap(){
   try{
-    const {data,error}=await sb.from('desk_job_hoist_legs').select('*').order('sequence');
-    if(error)throw error;
+    const data=await fetchAllRows(()=>sb.from('desk_job_hoist_legs').select('*').order('job_id').order('sequence'));
     const map={};
     (data||[]).forEach(l=>{(map[l.job_id]=map[l.job_id]||[]).push(l)});
     jobLegsMap=map;
@@ -6946,17 +7723,115 @@ function findHoistConflict(division,bay,startDate,durationHours,exclude){
       if(start<oEnd&&oStart<end)return {job:j,start:o.start,end:o.end,leg:o.leg};
     }
   }
+  // Block-outs conflict too. The fake job shape keeps every existing
+  // conflict message working untouched: "Block-out (<reason or fallback>)".
+  const dateStr=isoDateOnly(startDate);
+  for(const b of blockOuts){
+    if(exclude.blockOutId&&b.id===exclude.blockOutId)continue;
+    if(b.division!==division||b.bay!==bay||b.block_date!==dateStr)continue;
+    const [y,m,dd]=b.block_date.split('-').map(Number);
+    const oStart=new Date(y,m-1,dd).getTime()+Number(b.start_hour)*3600000;
+    const oEnd=oStart+Number(b.duration_hours||0.5)*3600000;
+    if(start<oEnd&&oStart<end)return {blockOut:b,job:{job_type:'Block-out',customer:{name:b.reason||'Hoist blocked'}},start:new Date(oStart),end:new Date(oEnd),leg:null};
+  }
   return null;
+}
+
+// ── Availability (click-to-book) ─────────────────────────────
+// Snapping granularity shared by the Hoist Day hover ghost, lane click and
+// the "slots from now" rounding — same 15-min grid as drag-rescheduling.
+function snapQuarterHour(h){return Math.round(h*4)/4}
+
+// Occupations for one hoist lane on one date, sorted by start — the same
+// shape the Hoist Day render loop builds, pulled out so hover/click handlers
+// and the week-view availability chips can reuse it.
+function laneOccupationsForDay(division,bay,dateStr){
+  const [y,m,dd]=dateStr.split('-').map(Number);
+  const day=new Date(y,m-1,dd);
+  const occ=[];
+  jobs.forEach(j=>{
+    if(j.is_deleted||j.status==='finished')return;
+    if(!j.booked_at||!sameLocalDate(new Date(j.booked_at),day))return;
+    getJobOccupations(j).forEach(o=>{if(o.division===division&&o.bay===bay)occ.push(o)});
+  });
+  // Block-outs occupy the lane exactly like a job does — the click-to-book
+  // ghost, free-slot chips and gap searches all respect them through here.
+  blockOuts.forEach(b=>{
+    if(b.division!==division||b.bay!==bay||b.block_date!==dateStr)return;
+    const start=new Date(day.getTime()+Number(b.start_hour)*3600000);
+    const end=new Date(start.getTime()+Number(b.duration_hours||0.5)*3600000);
+    occ.push({leg:null,blockOut:b,division,bay,start,end});
+  });
+  return occ.sort((a,b)=>a.start-b.start);
+}
+
+// Earliest start-of-day boundary for slot searches on dateStr: business-open
+// for future days, "now" rounded UP to the next 15 min for today (no offering
+// slots in the past). Returns null for past dates.
+function slotSearchStartHour(dateStr){
+  const [y,m,dd]=dateStr.split('-').map(Number);
+  const day=new Date(y,m-1,dd);
+  const now=new Date();
+  if(day<new Date(now.getFullYear(),now.getMonth(),now.getDate()))return null;
+  if(!sameLocalDate(day,now))return DAY_VIEW_START_HOUR;
+  return Math.min(DAY_VIEW_END_HOUR,Math.ceil((now.getHours()+now.getMinutes()/60)*4)/4);
+}
+
+// Does [startHour, startHour+durHours) collide with any occupation?
+function laneWindowFree(occ,startHour,durHours){
+  const startMs=startHour*3600000,endMs=(startHour+durHours)*3600000;
+  return !occ.some(o=>{
+    const oStart=(o.start.getHours()+o.start.getMinutes()/60+o.start.getSeconds()/3600)*3600000;
+    return startMs<(oStart+(o.end-o.start))&&oStart<endMs;
+  });
+}
+
+// First gap of at least minHours in one lane, from fromHour to business
+// close. Returns the gap's start hour, or null when the lane is booked out.
+function firstGapStartHour(occ,fromHour,minHours){
+  let cursor=Math.max(fromHour,DAY_VIEW_START_HOUR);
+  for(const o of occ){
+    const oStart=o.start.getHours()+o.start.getMinutes()/60;
+    const oEnd=oStart+(o.end-o.start)/3600000;
+    if(oEnd<=cursor)continue;
+    if(oStart-cursor>=minHours)return cursor;
+    cursor=Math.max(cursor,oEnd);
+  }
+  return DAY_VIEW_END_HOUR-cursor>=minHours?cursor:null;
+}
+
+// Earliest free slot per hoist for dateStr — drives both the week view's
+// "next free" chips and anything else that needs at-a-glance availability.
+// Returns an array of {division, bay, label, startHour} (hoists with no gap
+// are simply absent). Empty for past days and FULL/locked days.
+function findFreeSlotsForDay(dateStr,minHours){
+  minHours=minHours||0.5;
+  if(fullDays.includes(dateStr))return [];
+  const fromHour=slotSearchStartHour(dateStr);
+  if(fromHour==null)return [];
+  const slots=[];
+  HOISTS.forEach(h=>{
+    const occ=laneOccupationsForDay(h.division,h.bay,dateStr);
+    const startHour=firstGapStartHour(occ,fromHour,minHours);
+    if(startHour!=null)slots.push({division:h.division,bay:h.bay,label:h.label,startHour});
+  });
+  return slots;
 }
 
 let newJobExtraLegs=[]; // additional hoist stops beyond stop 1 (nj-division/nj-bay/nj-estimate)
 
-async function openNewJobModal(presetDateStr){
-  if(!jobTypes.length)await loadJobTypes();
-  if(!jobSources.length)await loadJobSources();
-  if(!jobs.length)await loadJobs();
-  if(!Object.keys(jobLegsMap).length)await loadJobLegsMap();
-  if(!employees.length)await loadEmployees();
+async function openNewJobModal(presetDateStr,presetSlot){
+  // The customer picker filters the in-memory `customers` array client-side, so
+  // it must be loaded before the modal opens — the Diary doesn't load it
+  // otherwise, which left "New Job" from the Diary showing no existing customers.
+  await Promise.all([
+    jobTypes.length?null:loadJobTypes(),
+    jobSources.length?null:loadJobSources(),
+    jobs.length?null:loadJobs(),
+    Object.keys(jobLegsMap).length?null:loadJobLegsMap(),
+    employees.length?null:loadEmployees(),
+    customers.length?null:loadCustomers()
+  ]);
   newJobCustomerId=null;
   newJobCustomerName='';
   newJobVehicleId=null;
@@ -6964,11 +7839,13 @@ async function openNewJobModal(presetDateStr){
   newJobShowNewVehicleFields=false;
   newJobExtraLegs=[];
   newJobPresetDate=presetDateStr||null;
+  newJobPresetSlot=presetSlot||null;
+  newJobReturnView=currentView;
   const dateFieldHtml=newJobPresetDate?`
       <label class="form-label">Date</label>
       <div class="selected-chip" style="margin-bottom:var(--space-4)">${new Date(newJobPresetDate+'T00:00').toLocaleDateString('en-AU',{weekday:'long',day:'numeric',month:'short',year:'numeric'})}</div>
       <label class="form-label">Time *</label>
-      <input class="form-input" type="time" id="nj-time" value="09:00" onchange="onNewJobScheduleChange()">`:`
+      <input class="form-input" type="time" id="nj-time" value="${newJobPresetSlot?.time||'09:00'}" onchange="onNewJobScheduleChange()">`:`
       <label class="form-label">Booked date/time</label>
       <input class="form-input" type="datetime-local" id="nj-booked" onchange="onNewJobScheduleChange()">`;
   const html=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
@@ -6986,8 +7863,8 @@ async function openNewJobModal(presetDateStr){
       <label class="form-label">Division</label>
       <select class="form-select" id="nj-division" onchange="onNewJobDivisionChange(this.value)">
         <option value="">— Select —</option>
-        <option value="tyre_shop">Tyre Shop</option>
-        <option value="workshop">Workshop</option>
+        <option value="tyre_shop" ${newJobPresetSlot?.division==='tyre_shop'?'selected':''}>Tyre Shop</option>
+        <option value="workshop" ${newJobPresetSlot?.division==='workshop'?'selected':''}>Workshop</option>
       </select>
       <div id="nj-bay-area"></div>
       <label class="form-label">Job type *</label>
@@ -7022,18 +7899,28 @@ async function openNewJobModal(presetDateStr){
     </div>
   </div>`;
   document.body.insertAdjacentHTML('beforeend',html);
+  // Slot preset (diary click-to-book): pre-fill the bay select for the preset
+  // division, then run the live conflict check so a clash is visible before
+  // anything is typed.
+  if(newJobPresetSlot?.division){
+    document.getElementById('nj-bay-area').innerHTML=newJobBayAreaHtml(newJobPresetSlot.division,newJobPresetSlot.bay);
+  }
+  onNewJobScheduleChange();
   renderNewJobOrderArea();
 }
 
-function onNewJobDivisionChange(v){
-  const area=document.getElementById('nj-bay-area');
-  if(v==='tyre_shop'){
-    area.innerHTML=`<label class="form-label">Hoist</label><select class="form-select" id="nj-bay" onchange="onNewJobScheduleChange()"><option value="">— Select —</option><option>4 Post</option><option>2 Post</option><option>Belly</option></select>`;
-  }else if(v==='workshop'){
-    area.innerHTML=`<label class="form-label">Bay</label><select class="form-select" id="nj-bay" onchange="onNewJobScheduleChange()"><option value="">— Select —</option><option>1</option><option>2</option><option>3</option><option>4</option></select>`;
-  }else{
-    area.innerHTML='';
+function newJobBayAreaHtml(division,selectedBay){
+  const sel=b=>selectedBay===b?' selected':'';
+  if(division==='tyre_shop'){
+    return `<label class="form-label">Hoist</label><select class="form-select" id="nj-bay" onchange="onNewJobScheduleChange()"><option value="">— Select —</option><option${sel('4 Post')}>4 Post</option><option${sel('2 Post')}>2 Post</option><option${sel('Belly')}>Belly</option></select>`;
+  }else if(division==='workshop'){
+    return `<label class="form-label">Bay</label><select class="form-select" id="nj-bay" onchange="onNewJobScheduleChange()"><option value="">— Select —</option><option${sel('1')}>1</option><option${sel('2')}>2</option><option${sel('3')}>3</option><option${sel('4')}>4</option></select>`;
   }
+  return '';
+}
+
+function onNewJobDivisionChange(v){
+  document.getElementById('nj-bay-area').innerHTML=newJobBayAreaHtml(v,null);
   onNewJobScheduleChange();
 }
 
@@ -7265,6 +8152,10 @@ async function saveNewJob(){
   const bayEl=document.getElementById('nj-bay');
   const bay=bayEl?(bayEl.value||null):null;
 
+  // Bay is required (UAT MINOR 1): bookings without one skip hoist conflict
+  // checking entirely and can silently double-book a lane.
+  if(!bay){showToast('Pick a hoist/bay before booking');return}
+
   if(newJobExtraLegs.length&&(!division||!bay)){
     showToast('Set the hoist for stop 1 before adding more stops');
     return;
@@ -7348,13 +8239,21 @@ async function saveNewJob(){
     closeModal();
     showToast('Job created');
     await loadCustomers();
-    await renderJobsView();
+    if(newJobReturnView==='diary'){
+      // Booked from the diary — land back on the same diary sub-view with the
+      // new card visible, not on the Jobs list.
+      await loadJobs();
+      await loadJobLegsMap();
+      renderDiaryGrid();
+    }else{
+      await renderJobsView();
+    }
   }catch(e){showToast('Could not create job')}
 }
 
 // ── DIARY ─────────────────────────────────────────────────────
 let diaryWeekStart=startOfWeek(new Date());
-let diarySubView='week'; // 'week' | 'day' (hoist day-planning view)
+let diarySubView='day'; // 'week' | 'day' (hoist day-planning view) — Hoist Day is the default landing view
 let diaryDayDate=new Date();
 let draggingItem=null; // {jobId, legId} — legId is null when dragging a whole (single-hoist) job
 let expandedDiaryCards=new Set(); // job ids currently expanded in the weekly Diary view
@@ -7655,6 +8554,7 @@ async function saveDiaryCardEdit(jobId){
 
 let dayNotes=[];
 let fullDays=[];
+let blockOuts=[]; // desk_block_outs rows — hoist lockouts with no customer attached
 let hoistDayClockInterval=null; // redraws the Hoist Day view every 60s so the "now" line travels
 
 // Hoist Day view business hours — Settings-configurable (desk_settings key
@@ -7693,16 +8593,34 @@ function isoDateOnly(d){
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 
+async function loadDiaryData(){
+  await Promise.all([
+    loadJobs(),
+    loadJobLegsMap(),
+    loadDayNotes(),
+    loadFullDays(),
+    loadBlockOuts(),
+    loadDiaryHoursSetting(),
+    employees.length?null:loadEmployees(),
+    customers.length?null:loadCustomers() // "New Job" from the Diary picks from this
+  ]);
+  diaryDataLoaded=true;
+}
+
 async function renderDiaryView(){
-  const main=document.getElementById('main');
-  main.innerHTML=`<div class="empty-state">Loading…</div>`;
-  await loadJobs();
-  await loadJobLegsMap();
-  await loadDayNotes();
-  await loadFullDays();
-  await loadDiaryHoursSetting();
-  if(!employees.length)await loadEmployees();
+  await loadDiaryData();
   renderDiaryGrid();
+}
+
+// Block-outs lock hoist time without a customer (delayed jobs, late
+// arrivals). They count as occupations for every conflict/availability
+// computation, so nothing gets booked or dragged over them.
+async function loadBlockOuts(){
+  try{
+    const {data,error}=await sb.from('desk_block_outs').select('*').order('block_date');
+    if(error)throw error;
+    blockOuts=data||[];
+  }catch(e){blockOuts=[]}
 }
 
 async function loadDayNotes(){
@@ -7813,6 +8731,28 @@ function diaryNextWeek(){
 function diaryToday(){diaryWeekStart=startOfWeek(new Date());diaryDayDate=new Date();renderDiaryGrid()}
 function setDiarySubView(v){diarySubView=v;renderDiaryGrid()}
 
+// Jump the Hoist Day view to a specific day (the day-picker strip). Keeps
+// diaryWeekStart on the same week so toggling back to Week view shows the
+// week you were just looking at.
+function setDiaryDay(dateStr){
+  diaryDayDate=new Date(dateStr+'T00:00:00');
+  diaryWeekStart=startOfWeek(diaryDayDate);
+  renderDiaryGrid();
+}
+
+// Day-of-week strip for the Hoist Day nav: one button per day of the week
+// (Sun–Sat, matching startOfWeek) containing the currently-viewed day.
+function hoistDayPickerHtml(){
+  const weekStart=startOfWeek(diaryDayDate),today=new Date();
+  let out='<div class="diary-day-picker">';
+  for(let i=0;i<7;i++){
+    const d=new Date(weekStart);d.setDate(d.getDate()+i);
+    const active=sameLocalDate(d,diaryDayDate),isToday=sameLocalDate(d,today);
+    out+=`<button class="${active?'active':''}${isToday?' today':''}" onclick="setDiaryDay('${isoDateOnly(d)}')">${d.toLocaleDateString('en-AU',{weekday:'short'})} ${d.getDate()}</button>`;
+  }
+  return out+'</div>';
+}
+
 function toggleDiaryTagFilter(tagId){
   const i=diaryTagFilter.indexOf(tagId);
   if(i>-1){diaryTagFilter.splice(i,1)}else{diaryTagFilter.push(tagId)}
@@ -7874,6 +8814,7 @@ function renderDiaryWeekGrid(){
     h+=`<div class="diary-day">
       <div class="diary-day-header${isToday?' today':''}">${d.toLocaleDateString('en-AU',{weekday:'short'})}<br>${d.toLocaleDateString('en-AU',{day:'numeric',month:'short'})}</div>
       ${isFull?'<div class="day-full-badge">FULL — LOCKED</div>':''}
+      ${isFull?'':diaryAvailStripHtml(dateStr)}
       <div class="diary-day-body${isFull?' day-full':''}" id="diary-day-body-${dateStr}" onclick="onDayBodyClick(event,'${dateStr}')" ondragover="onDiaryDragOver(event)" ondragleave="onDiaryDragLeave(event)" ondrop="onDiaryDrop(event,'${dateStr}')">
         ${diaryDayBodyContentHtml(d,dateStr)}
       </div>
@@ -7968,14 +8909,112 @@ function diaryDayBodyContentHtml(d,dateStr){
   `;
 }
 
+// ── Week view availability strip ─────────────────────────────
+// One chip per division showing that division's earliest free hoist slot, so
+// "when can I book this in?" is answered at a glance. Clicking a chip opens
+// the New Job modal with date/time/division/bay prefilled. Sits between the
+// day header and the clickable day body, so it never interferes with the
+// day context menu. Nothing renders for past days (FULL days are already
+// skipped by the caller — the FULL badge says enough).
+function diaryAvailStripHtml(dateStr){
+  if(slotSearchStartHour(dateStr)==null)return '';
+  const slots=findFreeSlotsForDay(dateStr);
+  const [y,m,dd]=dateStr.split('-').map(Number);
+  const chipFor=(division,shortLabel,fullLabel)=>{
+    const divSlots=slots.filter(s=>s.division===division);
+    if(!divSlots.length)return `<span class="diary-avail-chip booked-out" title="${fullLabel} — no free hoist slots">${shortLabel} booked out</span>`;
+    const s=divSlots.reduce((a,b)=>a.startHour<b.startHour?a:b);
+    const hh=Math.floor(s.startHour),mm=Math.round((s.startHour-hh)*60);
+    const timeLabel=new Date(y,m-1,dd,hh,mm).toLocaleTimeString('en-AU',{hour:'numeric',minute:'2-digit'});
+    return `<button class="diary-avail-chip" title="${fullLabel} — earliest free slot" onclick="openNewJobModal('${dateStr}',{time:'${hoursToHhmm(s.startHour)}',division:'${division}',bay:'${s.bay}'})">${shortLabel} ${esc(s.label)} · ${timeLabel}</button>`;
+  };
+  return `<div class="diary-avail">${chipFor('tyre_shop','TS','Tyre Shop')}${chipFor('workshop','WS','Workshop')}</div>`;
+}
+
 function onDiaryDragStart(e,jobId,legId){
   draggingItem={jobId,legId:legId||null};
   e.dataTransfer.effectAllowed='move';
   try{e.dataTransfer.setData('text/plain',jobId)}catch(err){}
 }
-function onDiaryDragEnd(){draggingItem=null}
-function onDiaryDragOver(e){e.preventDefault();e.currentTarget.classList.add('drag-over')}
-function onDiaryDragLeave(e){e.currentTarget.classList.remove('drag-over')}
+// Dragging the BLOCK OUT chip out of the side panel — drop lands in
+// onHoistDrop, which creates a 30-min block-out at the snapped time.
+function onBlockOutChipDragStart(e){
+  draggingItem={blockOutChip:true};
+  e.dataTransfer.effectAllowed='copy';
+  try{e.dataTransfer.setData('text/plain','blockout')}catch(err){}
+  // Kill the native drag ghost: it's a full-size clone of the side-panel
+  // chip and rides at the cursor exactly where the lane ghost + cursor time
+  // tag sit, hiding the very time you're trying to pick. A transparent 1×1
+  // stand-in keeps the drag alive while our own indicators carry the feedback.
+  try{e.dataTransfer.setDragImage(blockOutDragImage(),0,0)}catch(err){}
+}
+// Transparent 1×1 stand-in for setDragImage — one shared element, created lazily.
+function blockOutDragImage(){
+  let img=document.getElementById('bo-drag-img');
+  if(!img){
+    img=document.createElement('div');
+    img.id='bo-drag-img';
+    img.style.cssText='position:fixed;top:-10px;left:-10px;width:1px;height:1px;background:transparent;pointer-events:none';
+    document.body.appendChild(img);
+  }
+  return img;
+}
+function onDiaryDragEnd(){
+  draggingItem=null;
+  // Esc-cancelled drags never fire dragleave/drop — sweep the custom
+  // indicators here or they'd stay stuck on screen until the next render.
+  document.querySelectorAll('.hoist-book-ghost,.hoist-blockout-ghost').forEach(g=>g.style.display='none');
+  const tag=document.getElementById('bo-drag-tag');
+  if(tag)tag.style.display='none';
+}
+function onDiaryDragOver(e){
+  e.preventDefault();
+  e.currentTarget.classList.add('drag-over');
+  // Chip drags preview the actual block-out (same hatch, same 30-min height)
+  // at the exact span the drop will create — what you cover is what you get.
+  // The time rides a fixed-position cursor tag just right-and-up of the
+  // cursor, so it's never clipped by the narrow lane columns.
+  if(draggingItem?.blockOutChip){
+    const ghost=e.currentTarget.querySelector('.hoist-blockout-ghost');
+    if(!ghost)return; // week day body / unassigned column — no ghost there
+    const rect=e.currentTarget.getBoundingClientRect();
+    const snapped=Math.max(DAY_VIEW_START_HOUR,snapQuarterHour(DAY_VIEW_START_HOUR+(e.clientY-rect.top)/HOIST_PX_PER_HOUR));
+    const tag=blockOutDragTag();
+    if(snapped>=DAY_VIEW_END_HOUR){ghost.style.display='none';tag.style.display='none';return}
+    const hh=Math.floor(snapped),mm=Math.round((snapped-hh)*60);
+    const t0=new Date(2000,0,1,hh,mm);
+    const t1=new Date(t0.getTime()+30*60000);
+    const fmt=t=>t.toLocaleTimeString('en-AU',{hour:'numeric',minute:'2-digit'});
+    ghost.textContent=`BLOCKED · ${fmt(t0)} – ${fmt(t1)}`;
+    ghost.style.top=(snapped-DAY_VIEW_START_HOUR)*HOIST_PX_PER_HOUR+'px';
+    ghost.style.display='flex';
+    tag.textContent=`Block out · ${fmt(t0)} – ${fmt(t1)}`;
+    tag.style.display='block';
+    let lx=e.clientX+12;
+    if(lx+tag.offsetWidth>window.innerWidth-8)lx=e.clientX-tag.offsetWidth-12; // flip left at the viewport edge
+    let ly=e.clientY-30;
+    if(ly<4)ly=e.clientY+16; // flip below near the top
+    tag.style.left=lx+'px';
+    tag.style.top=ly+'px';
+  }
+}
+function onDiaryDragLeave(e){
+  e.currentTarget.classList.remove('drag-over');
+  e.currentTarget.querySelectorAll('.hoist-book-ghost,.hoist-blockout-ghost').forEach(g=>g.style.display='none');
+  blockOutDragTag().style.display='none';
+}
+
+// The one shared cursor tag for block-out drags — created on first use.
+function blockOutDragTag(){
+  let t=document.getElementById('bo-drag-tag');
+  if(!t){
+    t=document.createElement('div');
+    t.id='bo-drag-tag';
+    t.className='hoist-blockout-tag';
+    document.body.appendChild(t);
+  }
+  return t;
+}
 
 async function onDiaryDrop(e,dateStr){
   e.preventDefault();
@@ -8009,7 +9048,7 @@ async function onDiaryDrop(e,dateStr){
 // by booked_at + estimate_hours, so the whole day's hoist flow is visible
 // and pre-plannable at a glance. Drag a card to a different hoist/time to
 // reschedule it (same conflict check as the New Job modal).
-const HOIST_PX_PER_HOUR=60;
+const HOIST_PX_PER_HOUR=76; // was 60 — taller lanes fill the viewport better and give each job block more room
 
 function formatHourLabel(hr){
   const h12=hr%12===0?12:hr%12;
@@ -8030,8 +9069,11 @@ function renderHoistDayView(){
     <button class="btn-secondary" onclick="diaryToday()">Today</button>
     <button class="btn-secondary" onclick="diaryNextWeek()">Next →</button>
     ${diaryViewToggleHtml()}
+    <button class="btn-secondary" onclick="openBlockOutModal(null,'${dateStr}')">+ Block out</button>
     <button class="btn-primary" onclick="openNewJobModal('${dateStr}')">+ New Job</button>
   </div>`;
+
+  h+=hoistDayPickerHtml();
 
   if(isFull){h+='<div class="day-full-badge" style="margin-bottom:var(--space-3)">FULL — LOCKED</div>'}
 
@@ -8084,13 +9126,20 @@ function renderHoistDayView(){
   </div>`;
 
   ['tyre_shop','workshop'].forEach(div=>{
-    h+=`<div class="hoist-group"><div class="hoist-group-label">${esc(divisionLabel(div))}</div><div class="hoist-group-cols">`;
+    const divHoistCount=HOISTS.filter(hh=>hh.division===div).length;
+    // flex-grow proportional to bay count so the two divisions don't just
+    // split the row 50/50 regardless of how many hoists each has — see the
+    // CSS comment on .hoist-group.
+    h+=`<div class="hoist-group" style="flex:${Math.max(1,divHoistCount)} 1 0"><div class="hoist-group-label">${esc(divisionLabel(div))}</div><div class="hoist-group-cols">`;
     HOISTS.filter(hh=>hh.division===div).forEach(hh=>{
       const occHere=occupations.filter(o=>o.division===div&&o.bay===hh.bay).sort((a,b)=>a.start-b.start);
+      const blockOutsHere=blockOuts.filter(b=>b.block_date===dateStr&&b.division===div&&b.bay===hh.bay);
       h+=`<div class="hoist-col">
         <div class="hoist-col-header">${esc(hh.label)}</div>
-        <div class="hoist-lane" style="height:${gridHeight}px" ondragover="onDiaryDragOver(event)" ondragleave="onDiaryDragLeave(event)" ondrop="onHoistDrop(event,'${div}','${hh.bay}','${dateStr}')">
+        <div class="hoist-lane" style="height:${gridHeight}px" onclick="onHoistLaneClick(event,this,'${div}','${hh.bay}','${dateStr}')" onmousemove="onHoistLaneHover(event,this,'${div}','${hh.bay}','${dateStr}')" onmouseleave="onHoistLaneLeave(this)" ondragover="onDiaryDragOver(event)" ondragleave="onDiaryDragLeave(event)" ondrop="onHoistDrop(event,'${div}','${hh.bay}','${dateStr}')">
           ${hourRulesHtml}
+          <div class="hoist-book-ghost"></div>
+          <div class="hoist-blockout-ghost"></div>
           ${occHere.map(o=>{
             const j=o.job;
             const startHour=o.start.getHours()+o.start.getMinutes()/60;
@@ -8103,10 +9152,29 @@ function renderHoistDayView(){
             const legIdArg=o.leg?`,'${o.leg.id}'`:'';
             const isNow=isToday&&now>=o.start&&now<o.end;
             const blockClickHandler=(legsForJob&&legsForJob.length>1)?`openJobFromDiary('${j.id}')`:`openHoistBlockEditModal('${j.id}')`;
+            const vehicleLine=[j.vehicle?.make,j.vehicle?.model].filter(Boolean).join(' ')+(j.vehicle?.rego?` (${j.vehicle.rego})`:'');
+            // Taller blocks (HOIST_PX_PER_HOUR=76 gives more room than the old
+            // 60) can now fit a 4th line — only show it once there's genuine
+            // space, so short jobs don't overflow their block.
+            const showVehicleLine=height>=64&&vehicleLine.trim();
             return `<div class="hoist-block ${j.status}${isNow?' current-now':''}" draggable="true" style="top:${top}px;height:${height}px" ondragstart="onDiaryDragStart(event,'${j.id}'${legIdArg})" ondragend="onDiaryDragEnd(event)" onclick="event.stopPropagation();${blockClickHandler}">
               <div class="hoist-block-time">${isNow?'<span class="hoist-now-badge">NOW</span> ':''}${o.start.toLocaleTimeString('en-AU',{hour:'numeric',minute:'2-digit'})}${stopTag}</div>
               <div class="hoist-block-type">${esc(j.job_type)}</div>
               <div class="hoist-block-sub">${esc(j.customer?.name||'—')}${contact?' · '+esc(contact):''}</div>
+              ${showVehicleLine?`<div class="hoist-block-sub">${esc(vehicleLine)}</div>`:''}
+            </div>`;
+          }).join('')}
+          ${blockOutsHere.map(b=>{
+            const bDur=Number(b.duration_hours)||0.5;
+            const bTop=Math.max(0,(Number(b.start_hour)-DAY_VIEW_START_HOUR)*HOIST_PX_PER_HOUR);
+            const bHeight=Math.max(24,bDur*HOIST_PX_PER_HOUR-2);
+            const [by,bm,bd]=dateStr.split('-').map(Number);
+            const bStart=new Date(by,bm-1,bd); bStart.setMinutes(bStart.getMinutes()+Number(b.start_hour)*60);
+            const bEnd=new Date(bStart.getTime()+bDur*3600000);
+            const tfmt=t=>t.toLocaleTimeString('en-AU',{hour:'numeric',minute:'2-digit'});
+            return `<div class="hoist-blockout" style="top:${bTop}px;height:${bHeight}px" onclick="event.stopPropagation();openBlockOutModal('${b.id}')">
+              <div class="hoist-block-time">BLOCKED · ${tfmt(bStart)} – ${tfmt(bEnd)}</div>
+              ${b.reason?`<div class="hoist-blockout-reason">${esc(b.reason)}</div>`:''}
             </div>`;
           }).join('')}
           ${nowLineHtml}
@@ -8119,6 +9187,10 @@ function renderHoistDayView(){
   h+=`<div class="hoist-unassigned">
     <div class="hoist-group-label">&nbsp;</div>
     <div class="hoist-col-header">Unassigned</div>
+    <div class="hoist-blockout-chip" draggable="true" title="Drag onto a hoist lane to lock time out" ondragstart="onBlockOutChipDragStart(event)" ondragend="onDiaryDragEnd(event)">
+      <strong>Block out</strong>
+      <span>Drag onto a hoist</span>
+    </div>
     <div class="hoist-unassigned-body" ondragover="onDiaryDragOver(event)" ondragleave="onDiaryDragLeave(event)" ondrop="onHoistUnassignDrop(event,'${dateStr}')">
       ${unassigned.length?unassigned.map(j=>{
         const contact=j.customer?.mobile||j.customer?.phone||'';
@@ -8135,10 +9207,199 @@ function renderHoistDayView(){
   // renderHoistDayView() is a pure re-render over already-loaded state (no
   // network calls), so the cheapest way to make the "now" line actually
   // travel is to just redraw the whole view once a minute while it's the
-  // active tab — re-check diarySubView inside the callback so this stops
-  // rescheduling itself the moment the user switches away.
+  // active tab — re-check both currentView and diarySubView inside the
+  // callback so this stops rescheduling itself the moment the user switches
+  // away. diarySubView alone isn't enough: it only tracks the Week/Day
+  // toggle *within* Diary and is never reset on navigating to a different
+  // top-level view (Customers, Invoices, etc.) — without the currentView
+  // check this timer kept firing in the background forever and force-
+  // overwrote whatever screen the user had since navigated to.
   clearInterval(hoistDayClockInterval);
-  hoistDayClockInterval=setInterval(()=>{if(diarySubView==='day')renderHoistDayView()},60000);
+  hoistDayClockInterval=setInterval(()=>{if(currentView==='diary'&&diarySubView==='day')renderHoistDayView()},60000);
+}
+
+// ── Click-to-book on empty lane space ────────────────────────
+// Ghost and click share one computation: where the mouse lands snapped to
+// the 15-min grid, and whether a 30-min slot starting there is bookable.
+// Returns null when the slot isn't on offer (outside business hours, in the
+// past, overlapping a job, or the day is locked).
+function hoistLaneSlotAt(e,lane,division,bay,dateStr){
+  const rect=lane.getBoundingClientRect();
+  const rawHour=DAY_VIEW_START_HOUR+(e.clientY-rect.top)/HOIST_PX_PER_HOUR;
+  const snapped=Math.max(DAY_VIEW_START_HOUR,snapQuarterHour(rawHour));
+  if(snapped>=DAY_VIEW_END_HOUR)return null;
+  if(fullDays.includes(dateStr))return null;
+  const fromHour=slotSearchStartHour(dateStr);
+  if(fromHour==null||snapped<fromHour)return null;
+  if(!laneWindowFree(laneOccupationsForDay(division,bay,dateStr),snapped,0.5))return null;
+  return {snapped,top:(snapped-DAY_VIEW_START_HOUR)*HOIST_PX_PER_HOUR};
+}
+
+function onHoistLaneHover(e,lane,division,bay,dateStr){
+  const ghost=lane.querySelector('.hoist-book-ghost');
+  if(!ghost)return;
+  const slot=hoistLaneSlotAt(e,lane,division,bay,dateStr);
+  if(!slot){ghost.style.display='none';return}
+  const [y,m,dd]=dateStr.split('-').map(Number);
+  const hh=Math.floor(slot.snapped),mm=Math.round((slot.snapped-hh)*60);
+  ghost.textContent='+ '+new Date(y,m-1,dd,hh,mm).toLocaleTimeString('en-AU',{hour:'numeric',minute:'2-digit'});
+  ghost.style.top=slot.top+'px';
+  ghost.style.display='flex';
+}
+
+function onHoistLaneLeave(lane){
+  const ghost=lane.querySelector('.hoist-book-ghost');
+  if(ghost)ghost.style.display='none';
+}
+
+function onHoistLaneClick(e,lane,division,bay,dateStr){
+  if(fullDays.includes(dateStr)){showToast('That day is locked — unmark it as full first');return}
+  const slot=hoistLaneSlotAt(e,lane,division,bay,dateStr);
+  if(slot){openNewJobModal(dateStr,{time:hoursToHhmm(slot.snapped),division,bay});return}
+  // Refused — say why instead of silently doing nothing. Hover stays silent;
+  // a click always deserves an answer.
+  const rect=lane.getBoundingClientRect();
+  const snapped=Math.max(DAY_VIEW_START_HOUR,snapQuarterHour(DAY_VIEW_START_HOUR+(e.clientY-rect.top)/HOIST_PX_PER_HOUR));
+  if(snapped>=DAY_VIEW_END_HOUR){showToast("That's after close — pick a time inside business hours");return}
+  const fromHour=slotSearchStartHour(dateStr);
+  const label=(HOISTS.find(h=>h.division===division&&h.bay===bay)||{}).label||bay;
+  if(fromHour==null){showToast('That day has already passed — use + New Job to log a past job');return}
+  if(snapped<fromHour){showToast('That time has already passed today — use + New Job to log a job that already happened');return}
+  showToast(`${label} is already booked at that time — pick a clear gap`);
+}
+
+// ── Block-outs (hoist lockouts with no customer) ─────────────
+// openBlockOutModal(null, dateStr) → create form. openBlockOutModal(id) →
+// details + remove. Block-outs snap to the same 15-min grid as everything
+// else on this screen and count as lane occupations (laneOccupationsForDay).
+function openBlockOutModal(blockOutId,dateStr){
+  if(blockOutId){
+    const b=blockOuts.find(x=>x.id===blockOutId);
+    if(!b)return;
+    const [y,m,dd]=b.block_date.split('-').map(Number);
+    const start=new Date(y,m-1,dd); start.setMinutes(start.getMinutes()+Number(b.start_hour)*60);
+    const end=new Date(start.getTime()+(Number(b.duration_hours)||0.5)*3600000);
+    const hoistLabel=(HOISTS.find(h=>h.division===b.division&&h.bay===b.bay)||{}).label||b.bay;
+    const fmt=t=>t.toLocaleTimeString('en-AU',{hour:'numeric',minute:'2-digit'});
+    const durH=Number(b.duration_hours)||0.5;
+    const durText=durH<1?`${durH*60} min`:`${Math.floor(durH)} h${durH%1?` ${Math.round((durH%1)*60)} min`:''}`;
+    const html=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+      <div class="modal-card">
+        <div class="modal-title">Block-out</div>
+        <div class="selected-chip" style="margin-bottom:var(--space-3)">${esc(divisionLabel(b.division))} — ${esc(hoistLabel)}</div>
+        <div style="font-family:var(--font-data);font-size:24px;font-weight:700;letter-spacing:-.01em;margin-bottom:var(--space-1)">${fmt(start)} – ${fmt(end)}</div>
+        <div class="field-label" style="margin-bottom:var(--space-3)">${start.toLocaleDateString('en-AU',{weekday:'long',day:'numeric',month:'short',year:'numeric'})}</div>
+        ${b.reason?`<div class="field-label">Reason</div><div class="field-val" style="margin-bottom:var(--space-3)">${esc(b.reason)}</div>`:''}
+        <div class="field-label">Duration</div>
+        <div style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:var(--space-3)">
+          <button class="btn-secondary" onclick="adjustBlockOutDuration('${b.id}',-0.25)">−15</button>
+          <strong>${durText}</strong>
+          <button class="btn-secondary" onclick="adjustBlockOutDuration('${b.id}',0.25)">+15</button>
+        </div>
+        <div class="form-actions">
+          <button class="btn-danger-link" onclick="removeBlockOut('${b.id}')">Remove block-out</button>
+          <button class="btn-secondary" onclick="closeModal()">Close</button>
+        </div>
+      </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend',html);
+    return;
+  }
+
+  dateStr=dateStr||isoDateOnly(diaryDayDate);
+  const [y,m,dd]=dateStr.split('-').map(Number);
+  const dayLabel=new Date(y,m-1,dd).toLocaleDateString('en-AU',{weekday:'long',day:'numeric',month:'short',year:'numeric'});
+  // Default start: next free-ish quarter hour (now, rounded up) for today,
+  // 9am for any other day — same rule the click-to-book ghost uses.
+  const fromHour=slotSearchStartHour(dateStr);
+  const defaultStart=hoursToHhmm(fromHour==null?9:Math.min(fromHour,DAY_VIEW_END_HOUR-0.5));
+  const durations=[0.25,0.5,0.75,1,1.5,2,3];
+  const durLabel=h=>h<1?`${h*60} min`:(h===1?'1 hour':`${h} hours`);
+  const html=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal-card">
+      <div class="modal-title">Block out hoist time</div>
+      <div class="selected-chip" style="margin-bottom:var(--space-4)">${dayLabel}</div>
+      <label class="form-label">Hoist *</label>
+      <select class="form-select" id="bo-hoist">
+        ${HOISTS.map(h=>`<option value="${h.division}|${h.bay}">${esc(divisionLabel(h.division))} — ${esc(h.label)}</option>`).join('')}
+      </select>
+      <label class="form-label">Start *</label>
+      <input class="form-input" type="time" step="900" id="bo-start" value="${defaultStart}">
+      <label class="form-label">Duration</label>
+      <select class="form-select" id="bo-duration">
+        ${durations.map(d=>`<option value="${d}"${d===0.5?' selected':''}>${durLabel(d)}</option>`).join('')}
+      </select>
+      <label class="form-label">Reason (optional)</label>
+      <input class="form-input" id="bo-reason" placeholder="e.g. Customer running late, job ran over…" maxlength="120">
+      <div style="font-size:var(--text-micro);color:var(--text-secondary);margin:var(--space-1) 0 var(--space-3)">No customer attached — the hoist just shows as blocked, and jobs can't be booked or dragged over it.</div>
+      <div class="form-actions">
+        <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn-primary" onclick="saveBlockOut('${dateStr}')">Block out</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
+async function saveBlockOut(dateStr){
+  const [division,bay]=document.getElementById('bo-hoist').value.split('|');
+  const t=document.getElementById('bo-start').value;
+  if(!t){showToast('Pick a start time');return}
+  const [hh,mm]=t.split(':').map(Number);
+  const startHour=hh+mm/60;
+  const duration=Number(document.getElementById('bo-duration').value)||0.5;
+  const reason=document.getElementById('bo-reason').value.trim();
+  const hoistLabel=(HOISTS.find(h=>h.division===division&&h.bay===bay)||{}).label||bay;
+  if(fullDays.includes(dateStr)){showToast('That day is locked — unmark it as full first');return}
+  if(startHour<DAY_VIEW_START_HOUR||startHour>=DAY_VIEW_END_HOUR){showToast('Start is outside business hours');return}
+  const [y,m,dd]=dateStr.split('-').map(Number);
+  const conflict=findHoistConflict(division,bay,new Date(y,m-1,dd,hh,mm),duration,{});
+  if(conflict){showToast(`${hoistLabel} already has ${conflict.job.job_type} then (${conflict.job.customer?.name||'—'})`);return}
+  try{
+    const {error}=await sb.from('desk_block_outs').insert({block_date:dateStr,division,bay,start_hour:startHour,duration_hours:duration,reason:reason||null});
+    if(error)throw error;
+    closeModal();
+    showToast(`${hoistLabel} blocked out`);
+    await loadBlockOuts();
+    renderDiaryGrid();
+  }catch(e){showToast('Could not create block-out')}
+}
+
+async function removeBlockOut(id){
+  try{
+    const {error}=await sb.from('desk_block_outs').delete().eq('id',id);
+    if(error)throw error;
+    closeModal();
+    showToast('Block-out removed');
+    await loadBlockOuts();
+    renderDiaryGrid();
+  }catch(e){showToast('Could not remove block-out')}
+}
+
+// ±15-min stepper in the details modal. Extending conflict-checks the new
+// window (excluding the block-out itself); shrinking never conflicts.
+async function adjustBlockOutDuration(id,delta){
+  const b=blockOuts.find(x=>x.id===id);
+  if(!b)return;
+  const cur=Number(b.duration_hours)||0.5;
+  const next=Math.round((cur+delta)*4)/4;
+  if(next<0.25){showToast('Minimum is 15 minutes');return}
+  if(next>4){showToast('Maximum is 4 hours');return}
+  if(next>cur){
+    const [y,m,dd]=b.block_date.split('-').map(Number);
+    const start=new Date(y,m-1,dd); start.setMinutes(start.getMinutes()+Number(b.start_hour)*60);
+    const conflict=findHoistConflict(b.division,b.bay,start,next,{blockOutId:b.id});
+    const hoistLabel=(HOISTS.find(h=>h.division===b.division&&h.bay===b.bay)||{}).label||b.bay;
+    if(conflict){showToast(`Can't extend — ${hoistLabel} has ${conflict.job.job_type} then (${conflict.job.customer?.name||'—'})`);return}
+  }
+  try{
+    const {error}=await sb.from('desk_block_outs').update({duration_hours:next}).eq('id',id);
+    if(error)throw error;
+    await loadBlockOuts();
+    renderDiaryGrid();
+    closeModal();
+    openBlockOutModal(id); // rebuild the modal with the fresh values
+  }catch(e){showToast('Could not update block-out')}
 }
 
 // Dropping a block onto a hoist lane snaps it to the vertical drop position
@@ -8149,10 +9410,37 @@ function renderHoistDayView(){
 async function onHoistDrop(e,division,bay,dateStr){
   e.preventDefault();
   e.currentTarget.classList.remove('drag-over');
+  const dropGhost=e.currentTarget.querySelector('.hoist-book-ghost');
+  if(dropGhost)dropGhost.style.display='none';
+  const dropBoGhost=e.currentTarget.querySelector('.hoist-blockout-ghost');
+  if(dropBoGhost)dropBoGhost.style.display='none';
+  blockOutDragTag().style.display='none';
   const item=draggingItem;
   draggingItem=null;
   if(!item)return;
   if(fullDays.includes(dateStr)){showToast('That day is locked — unmark it as full first');return}
+
+  // The BLOCK OUT chip — create a 30-min block-out at the snapped drop time.
+  // Extend/shrink it afterwards from its details (click the block).
+  if(item.blockOutChip){
+    const rect=e.currentTarget.getBoundingClientRect();
+    const snapped=Math.max(DAY_VIEW_START_HOUR,snapQuarterHour(DAY_VIEW_START_HOUR+(e.clientY-rect.top)/HOIST_PX_PER_HOUR));
+    if(snapped>=DAY_VIEW_END_HOUR){showToast("That's after close — pick a time inside business hours");return}
+    const hoistLabel=(HOISTS.find(h=>h.division===division&&h.bay===bay)||{}).label||bay;
+    const [cy,cm,cd]=dateStr.split('-').map(Number);
+    const sh=Math.floor(snapped),sm=Math.round((snapped-sh)*60);
+    const conflict=findHoistConflict(division,bay,new Date(cy,cm-1,cd,sh,sm),0.5,{});
+    if(conflict){showToast(`${hoistLabel} already has ${conflict.job.job_type} then (${conflict.job.customer?.name||'—'})`);return}
+    try{
+      const {error}=await sb.from('desk_block_outs').insert({block_date:dateStr,division,bay,start_hour:snapped,duration_hours:0.5,reason:null});
+      if(error)throw error;
+      await loadBlockOuts();
+      renderDiaryGrid();
+      showToast(`${hoistLabel} blocked out at ${hoursToHhmm(snapped)} — click the block to adjust`);
+    }catch(err){showToast('Could not create block-out')}
+    return;
+  }
+
   const j=jobs.find(x=>x.id===item.jobId);
   if(!j)return;
   const rect=e.currentTarget.getBoundingClientRect();
