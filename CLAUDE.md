@@ -8,13 +8,15 @@ on https://trello.com/b/8pYZKWmY (board "DHF Desk"), with labels and a checklist
 ## Engagement
 
 - **Client:** DHF Tyres (Hallam, VIC). Owner/developer of the app so far: Dinuka (`dinuka-dhf` on GitHub).
+- **Repo:** `dhf-organisation/dhf-desk-deploy` (moved out of Dinuka's personal account on 2026-09-16; old links redirect).
 - **Us:** Lahiru (SmoothSailor), brought in to *productionise* DHF Desk.
 - **Priority order (agreed 2026-09-15):**
   1. DevOps framework: environments, CI/CD, security scanning, Supabase integration
   2. Bug backlog
 - **Scope/arrangement:** not confirmed in writing yet. See the Trello card "Scope the engagement with Dinuka properly".
 - **Access we have today:**
-  - GitHub: **WRITE** only on `dinuka-dhf/dhf-desk-deploy` (not admin)
+  - GitHub: org **member** with **write** on `dhf-organisation/dhf-desk-deploy`. **Still not admin**, so rulesets, environments and security settings need Dinuka to make Lahiru an org Owner.
+  - Netlify + Supabase: access granted 2026-09-16 (Netlify team `dinuka`, Supabase org `fhyhrpvrmpmnzbrypows`). CLI on this machine isn't logged in to either yet.
   - No confirmed Netlify, Supabase, Google Cloud, Resend or Twilio access
   - Can't sign into the app: staff login is limited to `@dhftyres.com.au` plus `dushentissera@gmail.com`
 - **The repo is PUBLIC.** Whether to make it private is an open P0 decision.
@@ -63,6 +65,10 @@ A MechanicDesk-style workshop management system: diary/hoist scheduling, jobs, c
 - `design-brief.md` (plus `design-brief v3.md` and `design-brief-v5.md`), which the CSS comments cite. Also in `/home/dinuka/AI/dhf-desk-docs/`.
 - The **supplier-stock scraper**: Playwright, uses the **service-role key**. Scrapes Tempe Tyres + Newbee Tyre into `desk_supplier_stock`, using sizes from `desk_tracked_tyre_sizes`.
   - Location **unknown**: it's not on Dinuka's Linux machine, despite what the app.js comment says.
+  - 🛑 **Being retired (Dinuka, 2026-09-15): "remove the scraper from DHF Desk".** Don't invest in it.
+    - Still to do: find and stop it, rotate the service-role key, and stop the app showing stale supplier data (https://trello.com/c/jLAkeIhI).
+    - Affected in-app: the **Supplier Stock** tab, supplier results in Ctrl+K search, and Settings → Tracked Tyre Sizes.
+    - A replacement for cost/availability lookups is being decided separately (https://trello.com/c/nv7E9oDG).
 - Messaging: Resend (email) and Twilio (SMS) are called from Postgres via pg_net. Booking confirmations and day-before reminders are automated.
 
 ## app.js map (8,244 lines)
@@ -155,7 +161,7 @@ No separate hosted dev, and staging and UAT are combined: one developer, and eac
   - staff allowlist moved server-side
   - Playwright E2E
   - Lighthouse/axe budgets
-- **P5 operations:** backups + restore drill; monitoring/alerting (error tracking, uptime, failed messages/cron); scraper moved off the personal machine with a scoped key; secrets inventory/rotation; docs/handover
+- **P5 operations:** backups + restore drill; monitoring/alerting (error tracking, uptime, failed messages/cron); scraper decommissioned (Dinuka's call) and its key rotated; secrets inventory/rotation; docs/handover
 
 Rules this plan implies from day one:
 - Schema changes only through migrations
