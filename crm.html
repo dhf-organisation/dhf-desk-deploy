@@ -1022,6 +1022,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
 </style>
 </head>
 <body>
+<script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 // ══ AUTH GATE ══
@@ -1039,7 +1040,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
 // authenticated @dhftyres.com.au session, so linkLeadToDeskCustomer() uses
 // deskSb.from(...), not the CRM's own sb.get/post — everything else in this
 // file keeps using the CRM's original sb wrapper, unchanged.
-window.deskSb=supabase.createClient('https://cztpumgrvhmcvvpqbfqo.supabase.co','sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub3');
+window.deskSb=supabase.createClient((window.DHF_CONFIG||{}).supabaseUrl||'https://cztpumgrvhmcvvpqbfqo.supabase.co',(window.DHF_CONFIG||{}).supabaseKey||'sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub3');
 (function(){
   deskSb.auth.getSession().then(function(r){
     var email=r.data&&r.data.session&&r.data.session.user&&r.data.session.user.email;
@@ -2508,8 +2509,9 @@ window.deskSb=supabase.createClient('https://cztpumgrvhmcvvpqbfqo.supabase.co','
 
 <script>
 // ── SUPABASE ──────────────────────────────────────────────────────────────
-const SB_URL = 'https://cztpumgrvhmcvvpqbfqo.supabase.co';
-const SB_KEY = 'sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub3';
+// From config.js (loaded at the top of <body>); fallbacks are production.
+const SB_URL = (window.DHF_CONFIG||{}).supabaseUrl || 'https://cztpumgrvhmcvvpqbfqo.supabase.co';
+const SB_KEY = (window.DHF_CONFIG||{}).supabaseKey || 'sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub3';
 const H = {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'};
 
 const sb = {
