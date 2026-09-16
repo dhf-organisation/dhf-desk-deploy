@@ -16,6 +16,11 @@
 # deploys and deploy previews alike. `_headers` must be copied into dist/ for
 # the CSP/security headers to keep applying.
 
+# `config.js` and `_headers` are copied and then rewritten by build-config.mjs
+# when DHF_ENV is set (staging / deploy previews), so a non-production deploy
+# talks to a non-production database. Production sets no DHF_* variables and
+# ships the committed files unchanged.
+
 [build]
   publish = "dist"
-  command = "rm -rf dist && mkdir dist && cp index.html app.js portal.html staff.html crm.html tokens.css manifest.json _headers dist/"
+  command = "rm -rf dist && mkdir dist && cp index.html app.js portal.html staff.html crm.html tokens.css manifest.json config.js _headers dist/ && node scripts/build-config.mjs"

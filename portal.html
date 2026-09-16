@@ -101,10 +101,13 @@ p.muted{color:var(--text-muted);font-size:var(--text-sm)}
   <div class="foot">DHF Tyres · Workshop desk</div>
 </div>
 
+<script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-const SB_URL='https://cztpumgrvhmcvvpqbfqo.supabase.co';
-const SB_KEY='sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub3';
+// Environment config — see config.js. Fallbacks are the production values.
+const DHF_CFG=window.DHF_CONFIG||{};
+const SB_URL=DHF_CFG.supabaseUrl||'https://cztpumgrvhmcvvpqbfqo.supabase.co';
+const SB_KEY=DHF_CFG.supabaseKey||'sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub3';
 const sb=supabase.createClient(SB_URL,SB_KEY);
 
 const STATUS_LABEL={booking:'Booked In',in_progress:'Being Worked On',on_hold:'On Hold',finished:'Ready for Pickup!'};

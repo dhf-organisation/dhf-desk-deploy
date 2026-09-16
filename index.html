@@ -842,6 +842,9 @@ input[type=checkbox],input[type=radio],progress{accent-color:var(--accent)}
       <div class="login-eyebrow">DHF Tyres · Workshop desk</div>
       <div class="login-title">the desk that <em>keeps</em> the lights on.</div>
       <div class="login-sub">Sign in with your DHF Tyres account.</div>
+      <!-- data-client_id is set from config.js before the GSI script loads
+           (see the script block at the bottom of this file); the value here is
+           the production fallback. -->
       <div id="g_id_onload"
            data-client_id="992833623399-s28cqha40ho2f4s2mvihskiicngb3g5e.apps.googleusercontent.com"
            data-auto_prompt="false"
@@ -935,9 +938,35 @@ input[type=checkbox],input[type=radio],progress{accent-color:var(--accent)}
 
 <div class="toast" id="toast"></div>
 
+<script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="app.js"></script>
+<!-- The Google client ID and Maps key vary by environment, so they're applied
+     from config.js here rather than hard-coded in markup/URLs. This block is
+     deliberately BEFORE the Google scripts below: it's a synchronous script,
+     so the data-client_id is in place before the async GSI script can read
+     it, and Maps is injected with the right key. -->
+<script>
+(function(){
+  var cfg=window.DHF_CONFIG||{};
+  var onload=document.getElementById('g_id_onload');
+  if(onload&&cfg.googleClientId)onload.dataset.client_id=cfg.googleClientId;
+  if(cfg.mapsKey){
+    var s=document.createElement('script');
+    s.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(cfg.mapsKey)+'&libraries=places&loading=async';
+    s.async=true;s.defer=true;
+    document.head.appendChild(s);
+  }
+  // Non-production environments get a visible banner, so nobody mistakes
+  // staging for the real thing while entering a customer's job.
+  if(cfg.env&&cfg.env!=='production'){
+    var b=document.createElement('div');
+    b.textContent=cfg.env.toUpperCase()+' — not production';
+    b.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#B45309;color:#fff;font:600 12px/1.6 system-ui,sans-serif;text-align:center;letter-spacing:.04em;pointer-events:none';
+    document.addEventListener('DOMContentLoaded',function(){document.body.appendChild(b)});
+  }
+})();
+</script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCOX5HVSFPX_4ktHAZA_wtWrw5WwQLn38s&libraries=places&loading=async" async defer></script>
 </body>
 </html>

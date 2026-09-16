@@ -122,17 +122,20 @@ p.muted{color:var(--text-muted);font-size:var(--text-sm)}
 </div>
 <div class="toast" id="toast" style="position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--toast-bg);color:var(--toast-text);padding:var(--space-2) var(--space-6);border-radius:var(--radius-pill);font-size:var(--text-sm);font-weight:600;opacity:0;pointer-events:none;transition:opacity var(--duration) var(--ease-out);z-index:999;box-shadow:var(--shadow-pop)"></div>
 
+<script src="config.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-const SB_URL='https://cztpumgrvhmcvvpqbfqo.supabase.co';
-const SB_KEY='sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub3';
+// Environment config — see config.js. Fallbacks are the production values.
+const DHF_CFG=window.DHF_CONFIG||{};
+const SB_URL=DHF_CFG.supabaseUrl||'https://cztpumgrvhmcvvpqbfqo.supabase.co';
+const SB_KEY=DHF_CFG.supabaseKey||'sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub3';
 const sb=supabase.createClient(SB_URL,SB_KEY);
 
 // Same allowlist as app.js — deliberately kept identical, not re-derived,
 // so "who counts as staff" can never drift between the two apps.
-const ALLOWED_DOMAIN='dhftyres.com.au';
-const ALLOWED_EMAILS=['dushentissera@gmail.com'];
+const ALLOWED_DOMAIN=DHF_CFG.allowedDomain||'dhftyres.com.au';
+const ALLOWED_EMAILS=DHF_CFG.allowedEmails||['dushentissera@gmail.com'];
 
 const STATUS_LABEL={booking:'Booking',in_progress:'In Progress',on_hold:'On Hold',finished:'Finished'};
 const STATUS_ORDER=['booking','in_progress','on_hold','finished'];
@@ -185,7 +188,7 @@ function renderSignIn(){
       <h1>Sign in</h1>
       <p class="muted" style="margin-top:var(--space-2)">Use your DHF Tyres Google account.</p>
       <div id="g_id_onload"
-           data-client_id="992833623399-s28cqha40ho2f4s2mvihskiicngb3g5e.apps.googleusercontent.com"
+           data-client_id="${DHF_CFG.googleClientId||'992833623399-s28cqha40ho2f4s2mvihskiicngb3g5e.apps.googleusercontent.com'}"
            data-auto_prompt="false"
            data-callback="handleGoogleSignIn"></div>
       <div class="g_id_signin" data-type="standard" data-theme="filled_black" data-size="large" data-text="sign_in_with" data-shape="pill"></div>

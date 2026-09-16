@@ -20,8 +20,12 @@ function toggleTheme(){
 }
 
 // ── SUPABASE CLIENT & AUTH ──────────────────────────────────
-const SB_URL='https://cztpumgrvhmcvvpqbfqo.supabase.co';
-const SB_KEY='sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub3';
+// Environment config comes from config.js, loaded before this file — see that
+// file for why none of it is secret. The fallbacks keep production working if
+// config.js ever fails to load; they are the production values.
+const DHF_CFG=window.DHF_CONFIG||{};
+const SB_URL=DHF_CFG.supabaseUrl||'https://cztpumgrvhmcvvpqbfqo.supabase.co';
+const SB_KEY=DHF_CFG.supabaseKey||'sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub3';
 // Public anon key — RLS (is_desk_user()/is_desk_admin() in the desk_* table
 // policies) is what actually protects data, keyed off the verified identity
 // in the Supabase Auth session below, exactly like the Hub and every other
@@ -29,8 +33,8 @@ const SB_KEY='sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub3';
 // its own.
 const sb=supabase.createClient(SB_URL,SB_KEY);
 
-const ALLOWED_DOMAIN='dhftyres.com.au';
-const ALLOWED_EMAILS=['dushentissera@gmail.com'];
+const ALLOWED_DOMAIN=DHF_CFG.allowedDomain||'dhftyres.com.au';
+const ALLOWED_EMAILS=DHF_CFG.allowedEmails||['dushentissera@gmail.com'];
 
 let currentUser=null;
 let currentView='diary';
