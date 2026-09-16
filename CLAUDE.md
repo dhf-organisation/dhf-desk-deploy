@@ -17,7 +17,7 @@ on https://trello.com/b/8pYZKWmY (board "DHF Desk"), with labels and a checklist
 - **Access we have today:**
   - GitHub: org **member** with **write** on `dhf-organisation/dhf-desk-deploy`. **Still not admin**, so rulesets, environments and security settings need Dinuka to make Lahiru an org Owner.
   - Netlify + Supabase: access granted 2026-09-16 (Netlify team `dinuka`, Supabase org `fhyhrpvrmpmnzbrypows`). CLI on this machine isn't logged in to either yet.
-  - No confirmed Netlify, Supabase, Google Cloud, Resend or Twilio access
+  - Google Cloud, Resend and Twilio: no access yet
   - Can't sign into the app: staff login is limited to `@dhftyres.com.au` plus `dushentissera@gmail.com`
 - **The repo is PUBLIC.** Whether to make it private is an open P0 decision.
 
