@@ -473,7 +473,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
 .ds-nav-btn{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;color:var(--text)}
 .ds-nav-btn:hover{background:var(--bg)}
 .ds-today-btn{background:var(--blue);color:var(--surface);border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer}
-.ds-metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:20px}
+.ds-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px}
 .ds-metric{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 12px;text-align:center}
 .ds-metric-val{font-size:26px;font-weight:800;line-height:1}
 .ds-metric-label{font-size:11px;color:var(--muted);font-weight:600;margin-top:5px;text-transform:uppercase;letter-spacing:.3px}
@@ -500,7 +500,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
 .ds-copy-btn{background:var(--blue);color:var(--surface);border:none;border-radius:9px;padding:11px 18px;font-size:14px;font-weight:700;cursor:pointer;width:100%}
 .ds-copy-btn:hover{background:var(--accent-hover)}
 .ds-copy-hint{font-size:12px;color:var(--muted);margin-top:8px;text-align:center}
-@media(max-width:768px){.ds-metrics{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:768px){.ds-metrics{grid-template-columns:repeat(2,1fr)}}
 /* ── EXPORT MODAL ── */
 .export-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;align-items:center;justify-content:center;padding:20px}
 .export-overlay.open{display:flex}
@@ -679,12 +679,14 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
 .aest-clock-time{font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.5px}
 .aest-clock-zone{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:1px;opacity:.85;margin-top:1px}
 .topbar-logo span{color:var(--text)}
-.nav-tabs{display:flex;gap:2px;background:var(--bg);border-radius:10px;padding:3px}
+.nav-tabs{display:flex;gap:2px;background:var(--bg);border-radius:10px;padding:3px;flex-shrink:0}
+.nav-row{display:flex;align-items:center;gap:12px;padding:0 20px;height:48px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:56px;z-index:98;overflow-x:auto;overflow-y:hidden;flex-shrink:0;scrollbar-width:thin}
+.nav-filters{display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0}
 .nav-tab{padding:5px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted);border:none;background:transparent;transition:.15s;white-space:nowrap;display:flex;align-items:center;gap:6px}
 .nav-tab.active{background:var(--surface);color:var(--blue);box-shadow:0 1px 4px rgba(0,0,0,.1)}
 .nav-tab .badge{background:var(--red);color:var(--surface);font-size:10px;font-weight:700;padding:1px 5px;border-radius:8px;min-width:16px;text-align:center}
 .topbar-search{flex:1;max-width:260px;position:relative}
-.search-row{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 20px;position:sticky;top:56px;z-index:99}
+.search-row{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 20px;position:sticky;top:104px;z-index:99}
 .search-row-inner{position:relative;max-width:100%}
 .search-row-inner .sicon{position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:16px;opacity:.55;pointer-events:none}
 .search-row-inner input{width:100%;padding:11px 16px 11px 42px;border:1px solid var(--border);border-radius:12px;font-size:15px;background:var(--bg);outline:none;color:var(--text);user-select:text;transition:.15s}
@@ -1051,11 +1053,24 @@ window.deskSb=supabase.createClient('https://cztpumgrvhmcvvpqbfqo.supabase.co','
 
 <!-- ── TOPBAR ── -->
 <div class="topbar">
-  <a class='topbar-logo' href='/' style='text-decoration:none;cursor:pointer' title='Back to Desk'>DHF <span>Tyres</span></a>
+  <a href="index.html" class="topbar-logo" style="text-decoration:none;cursor:pointer" title="Back to Desk">DHF <span>Tyres</span></a>
   <div class="aest-clock" id="aestClock" title="Current time in Melbourne, Australia">
     <span class="aest-clock-time" id="aestClockTime">--:--:--</span>
     <span class="aest-clock-zone">Melbourne</span>
   </div>
+  <div class="topbar-right">
+    <a href="index.html" style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:8px;font-size:13px;font-weight:600;color:var(--text);background:var(--surface);border:1px solid var(--border-strong);text-decoration:none;white-space:nowrap">← Back to Desk</a>
+    <div class="topbar-user" id="topbarUser"></div>
+    <div class="topbar-count" id="totalCount"></div>
+    <div class="sync-dot" id="syncDot" title="Sync status"></div>
+    <button class="btn-secondary" onclick="openExportModal()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);font-weight:600;padding:7px 12px;border-radius:9px;font-size:13px;cursor:pointer">⬇ Export</button>
+    <button class="btn-primary" onclick="openInboundCall()" style="background:var(--green);border-color:var(--green)">📞 Inbound Call</button>
+    <button class="btn-primary" onclick="openDrawer()">＋ Add Lead</button>
+  </div>
+</div>
+
+<!-- ── NAV ROW (tabs + pipeline filters) ── -->
+<div class="nav-row">
   <div class="nav-tabs">
     <button class="nav-tab active" id="tab-pipeline" onclick="switchPage('pipeline')">📋 Pipeline</button>
     <button class="nav-tab" id="tab-calendar" onclick="switchPage('calendar')">📅 Calendar</button>
@@ -1069,19 +1084,12 @@ window.deskSb=supabase.createClient('https://cztpumgrvhmcvvpqbfqo.supabase.co','
     </button>
     <button class="nav-tab" id="tab-projection" onclick="switchPage('projection')">📊 Projection</button>
   </div>
-  <div class="topbar-right">
-    <a href='/' style='display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:8px;font-size:13px;font-weight:600;color:var(--text);background:var(--surface);border:1px solid var(--border-strong);text-decoration:none;white-space:nowrap'>← Back to Desk</a>
-    <div class="topbar-user" id="topbarUser"></div>
+  <div class="nav-filters" id="enqFilters">
     <div class="filter-chip active" data-enq="all" onclick="setEnqFilter(this)" id="fc-all">All</div>
     <div class="filter-chip" data-enq="Tyres" onclick="setEnqFilter(this)">Tyres</div>
     <div class="filter-chip" data-enq="Mechanical" onclick="setEnqFilter(this)">Mech</div>
     <div class="filter-chip" data-enq="Roadworthy" onclick="setEnqFilter(this)">RWC</div>
     <div class="filter-chip" data-enq="overdue" onclick="setEnqFilter(this)">⚠️ Overdue</div>
-    <div class="topbar-count" id="totalCount"></div>
-    <div class="sync-dot" id="syncDot" title="Sync status"></div>
-    <button class="btn-secondary" onclick="openExportModal()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);font-weight:600;padding:7px 12px;border-radius:9px;font-size:13px;cursor:pointer">⬇ Export</button>
-    <button class="btn-primary" onclick="openInboundCall()" style="background:var(--green);border-color:var(--green)">📞 Inbound Call</button>
-    <button class="btn-primary" onclick="openDrawer()">＋ Add Lead</button>
   </div>
 </div>
 
@@ -1293,7 +1301,10 @@ window.deskSb=supabase.createClient('https://cztpumgrvhmcvvpqbfqo.supabase.co','
       <div class="ds-metric"><div class="ds-metric-val" id="ds-new-count">0</div><div class="ds-metric-label">New Leads</div></div>
       <div class="ds-metric"><div class="ds-metric-val kv-green" id="ds-booked-count">0</div><div class="ds-metric-label">Booked</div></div>
       <div class="ds-metric"><div class="ds-metric-val kv-green" id="ds-revenue">$0</div><div class="ds-metric-label">Revenue Booked</div></div>
+      <div class="ds-metric"><div class="ds-metric-val kv-green" id="ds-won-count">0</div><div class="ds-metric-label">Won Today</div></div>
+      <div class="ds-metric"><div class="ds-metric-val kv-green" id="ds-won-rev">$0</div><div class="ds-metric-label">Won Value</div></div>
       <div class="ds-metric"><div class="ds-metric-val kv-orange" id="ds-cold-count">0</div><div class="ds-metric-label">Went Cold</div></div>
+      <div class="ds-metric"><div class="ds-metric-val kv-orange" id="ds-missedfu-count">0</div><div class="ds-metric-label">Missed F/Us</div></div>
       <div class="ds-metric"><div class="ds-metric-val kv-red" id="ds-lost-count">0</div><div class="ds-metric-label">Lost</div></div>
       <div class="ds-metric"><div class="ds-metric-val" id="ds-needest-count">0</div><div class="ds-metric-label">Needs Estimate</div></div>
     </div>
@@ -1310,8 +1321,16 @@ window.deskSb=supabase.createClient('https://cztpumgrvhmcvvpqbfqo.supabase.co','
       <div class="ds-list" id="ds-booked-list"></div>
     </div>
     <div class="ds-section">
+      <div class="ds-section-title">🏆 Won Today (<span id="ds-won-detail-count">0</span> | <span id="ds-won-detail-rev">$0</span>)</div>
+      <div class="ds-list" id="ds-won-list"></div>
+    </div>
+    <div class="ds-section">
       <div class="ds-section-title" style="color:var(--orange)">🥶 Went Cold — Action Needed (<span id="ds-cold-detail-count">0</span>)</div>
       <div class="ds-list" id="ds-cold-list"></div>
+    </div>
+    <div class="ds-section">
+      <div class="ds-section-title" style="color:var(--orange)">📞 Missed Follow-ups (<span id="ds-missedfu-detail-count">0</span>)</div>
+      <div class="ds-list" id="ds-missedfu-list"></div>
     </div>
     <div class="ds-section">
       <div class="ds-section-title">❓ Needs Value Estimate (<span id="ds-needest-detail-count">0</span>)</div>
@@ -1748,10 +1767,10 @@ window.deskSb=supabase.createClient('https://cztpumgrvhmcvvpqbfqo.supabase.co','
         </div>
       </div>
       <div class="chart-card">
-        <div class="chart-title">Daily Spend vs Revenue Booked <span id="cac-daily-label"></span></div>
+        <div class="chart-title">Daily Spend vs Daily Revenue Booked <span id="cac-daily-label"></span></div>
         <div class="cac-daily-legend">
-          <span><span class="sw" style="background:var(--blue)"></span>Spend ($)</span>
-          <span><span class="sw" style="background:var(--green)"></span>Revenue booked ($)</span>
+          <span><span class="sw" style="background:var(--blue)"></span>Daily spend ($)</span>
+          <span><span class="sw" style="background:var(--green)"></span>Daily revenue booked ($)</span>
         </div>
         <div id="cac-daily-chart" class="cac-daily-chart"></div>
       </div>
@@ -2639,7 +2658,7 @@ function switchPage(p){
   // Hide search/filters on non-pipeline pages
   const showPipelineUI = p==='pipeline';
   document.getElementById('searchRow').style.display = showPipelineUI?'':'none';
-  document.querySelectorAll('.topbar-right .filter-chip').forEach(c=>c.style.display=showPipelineUI?'':'none');
+  document.querySelectorAll('.nav-filters .filter-chip').forEach(c=>c.style.display=showPipelineUI?'':'none');
   document.getElementById('totalCount').style.display=showPipelineUI?'':'none';
   if(p==='enquiries') renderEnqPage();
   if(p==='projection') renderProjection();
@@ -3394,6 +3413,21 @@ function wonDateValue(lead, newStage){
   return null;
 }
 
+function closedDateValue(lead, newStage){
+  // Stamp close time when a lead first moves to 'Closed'; clear it when it leaves Closed.
+  if(newStage === 'Closed') return lead.closed_at || new Date().toISOString();
+  return null;
+}
+
+// Probed lazily — true once the leads table has the closed_at column (see migrations/closed_at.sql).
+let SUPPORTS_CLOSED_AT = null;
+async function supportsClosedAt(){
+  if(SUPPORTS_CLOSED_AT !== null) return SUPPORTS_CLOSED_AT;
+  try { await sb.get('leads', 'select=closed_at&limit=1'); SUPPORTS_CLOSED_AT = true; }
+  catch(e){ SUPPORTS_CLOSED_AT = false; }
+  return SUPPORTS_CLOSED_AT;
+}
+
 function promptWonValue(lead){
   // Require the ACTUAL deal value when a lead is booked (moved to Won).
   // Returns the formatted "$X,XXX" string, or null if cancelled/empty/invalid.
@@ -3417,6 +3451,9 @@ async function doMove(lead,from,to){
   // Stamp won_date on booking (Won), clear it when leaving Won
   updates.won_date = wonDateValue(lead, to);
 
+  // Stamp closed_at on close (Closed), clear it when leaving Closed
+  if(await supportsClosedAt()) updates.closed_at = closedDateValue(lead, to);
+
   // Require the actual deal value when moving to Won (abort if not provided)
   if(to === 'Won'){
     const wonVal = promptWonValue(lead);
@@ -3432,6 +3469,13 @@ async function doMove(lead,from,to){
   try{await sb.patch('leads',lead.id,updates);sync('synced');}
   catch(e){sync('error');DATA[to]=DATA[to].filter(l=>l.id!==lead.id);DATA[from]=[lead,...DATA[from]];render();showToast('⚠ Could not save move');}
 
+  // Stamp a visible "Reactivated" note when a Closed lead is moved back to an active stage
+  if(from === 'Closed' && to !== 'Closed'){
+    const reactNotes = (lead.notes || '') + '\nReactivated - ' + new Date().toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'});
+    try { await sb.patch('leads', lead.id, {notes: reactNotes, updated_at: new Date().toISOString()}); }
+    catch(e){ console.error('reactivate note failed', e); }
+  }
+
   // Auto-add to the calling list when a lead enters a follow-up stage; remove when it's won/closed/lost
   if(isFollowUpStage(to)) ensureInCallList(updatedLead);
   else if(to==='Won' || to==='Closed' || to==='Not Ready to Buy') removeFromCallList(lead.id);
@@ -3443,7 +3487,7 @@ async function doMove(lead,from,to){
 }
 
 // ── FILTERS ───────────────────────────────────────────────────────────────
-function setEnqFilter(el){document.querySelectorAll('.topbar-right .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');activeEnq=el.dataset.enq;render();}
+function setEnqFilter(el){document.querySelectorAll('.nav-filters .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');activeEnq=el.dataset.enq;render();}
 function filterLeads(){searchTerm=document.getElementById('searchInput').value;render();}
 
 // ── ADD LEAD ──────────────────────────────────────────────────────────────
@@ -3863,15 +3907,20 @@ switchPage = function(p) {
 // VA LEAD ENTRY
 // ══════════════════════════════════════════════════════════
 
+function localISODate(d){
+  d = d || new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
 // Set default date to today
 (function(){
-  const today = new Date().toISOString().split('T')[0];
+  const today = localISODate();
   const qd = document.getElementById('qf-date');
   if(qd) qd.value = today;
   // default follow-up to tomorrow
   const tom = new Date(); tom.setDate(tom.getDate()+1);
   const qf = document.getElementById('qf-fudate');
-  if(qf) qf.value = tom.toISOString().split('T')[0];
+  if(qf) qf.value = localISODate(tom);
 })();
 
 function switchMethod(m){
@@ -3936,10 +3985,10 @@ function clearQuickForm(){
   document.getElementById('qf-status').value='New Lead';
   document.getElementById('qf-quote').value='No';
   document.getElementById('qf-emailok').value='No';
-  const today = new Date().toISOString().split('T')[0];
+  const today = localISODate();
   document.getElementById('qf-date').value = today;
   const tom = new Date(); tom.setDate(tom.getDate()+1);
-  document.getElementById('qf-fudate').value = tom.toISOString().split('T')[0];
+  document.getElementById('qf-fudate').value = localISODate(tom);
 }
 
 // ── SPREADSHEET FORM ──
@@ -3947,7 +3996,7 @@ let sheetRowCount = 0;
 
 function addSheetRow(){
   sheetRowCount++;
-  const today = new Date().toISOString().split('T')[0];
+  const today = localISODate();
   const tbody = document.getElementById('sheet-body');
   const tr = document.createElement('tr');
   tr.dataset.rowid = sheetRowCount;
@@ -4188,7 +4237,9 @@ async function gridSaveStage(leadId, oldStage, newStage, tr){
   DATA[newStage].unshift(lead);
   // Save to Supabase
   try{
-    await sb.patch('leads', leadId, {stage: newStage, value: lead.value, won_date: wonDateValue(lead, newStage), updated_at: new Date().toISOString()});
+    const patchBody = {stage: newStage, value: lead.value, won_date: wonDateValue(lead, newStage), updated_at: new Date().toISOString()};
+    if(await supportsClosedAt()) patchBody.closed_at = closedDateValue(lead, newStage);
+    await sb.patch('leads', leadId, patchBody);
     render(); // update Kanban
     renderGrid(); // re-render grid with new stage colours
     showToast('✓ Moved to ' + newStage);
@@ -4317,6 +4368,19 @@ async function ensureInCallList(lead){
   // Auto-add a lead to the calling list when it needs a follow-up call.
   if(!lead || !lead.id) return;
   if(CALL_LIST.some(c => c.lead_id === lead.id)) return;      // already there
+  // Reuse a soft-removed row (same id) so call_log history isn't orphaned by a duplicate item
+  try {
+    const existing = await sb.get('call_list', `lead_id=eq.${encodeURIComponent(lead.id)}&limit=1`);
+    if(existing && existing.length){
+      const prev = existing[0];
+      await sb.patch('call_list', prev.id, {removed:false, stage:lead.stage||lead._stage||prev.stage||''});
+      CALL_LIST.unshift({...prev, removed:false, stage:lead.stage||lead._stage||prev.stage||''});
+      updateCallingBadge();
+      const pg = document.getElementById('page-calling');
+      if(pg && pg.classList.contains('active') && typeof renderCallingPage==='function') renderCallingPage();
+      return;
+    }
+  } catch(e){ /* fall through to create */ }
   const item = {
     id: 'cl_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
     lead_id: lead.id,
@@ -4831,16 +4895,22 @@ async function closeFU2Lead(itemId, name, result){
       call_list_item_id: itemId,
       lead_name: name, lead_phone: '',
       called_at: new Date().toISOString(),
-      caller: 'Team', outcome,
+      caller: (CURRENT_USER && CURRENT_USER.name) || 'Team', outcome,
       notes: 'Closed from 2nd Follow Up list as ' + label,
       next_action: '', was_answered: true, callback_datetime: null,
     };
     await sb.post('call_log', entry);
     CALL_LOG.unshift(entry);
 
-    // 2. Find lead in Supabase directly by name (handles mismatched lead_ids)
-    const encodedName = encodeURIComponent(name);
-    const found = await sb.get('leads', `name=eq.${encodedName}&limit=1`);
+    // 2. Find the lead — prefer the call-list item's lead_id, fall back to name
+    const clItem = CALL_LIST.find(c => c.id === itemId);
+    let found = [];
+    if(clItem && clItem.lead_id){
+      try { found = await sb.get('leads', `id=eq.${encodeURIComponent(clItem.lead_id)}&limit=1`); } catch(e){ found = []; }
+    }
+    if(!found || !found.length){
+      found = await sb.get('leads', `name=eq.${encodeURIComponent(name)}&limit=1`);
+    }
 
     if(found && found.length > 0){
       const lead = found[0];
@@ -4854,12 +4924,14 @@ async function closeFU2Lead(itemId, name, result){
       }
 
       // 3. Update stage in Supabase
-      await sb.patch('leads', lead.id, {
+      const movePatch = {
         stage: targetStage,
         won_date: wonDateValue(lead, targetStage),
         ...valueUpdate,
         updated_at: new Date().toISOString()
-      });
+      };
+      if(await supportsClosedAt()) movePatch.closed_at = closedDateValue(lead, targetStage);
+      await sb.patch('leads', lead.id, movePatch);
 
       // 4. Update local DATA immediately so Kanban updates without refresh
       for(const stage of STAGES){
@@ -5012,12 +5084,16 @@ function runAnalytics(){
   const overdueEnqs = PENQS.filter(q=>q.status==='open'&&q.due_at&&new Date(q.due_at)<now).length;
   const pendingEnqs = PENQS.filter(q=>q.status==='open').length;
   const callAnswerR = CALL_LOG.length>0?CALL_LOG.filter(l=>l.was_answered).length/CALL_LOG.length:0;
+  const fuTracked   = activeLeads.filter(l=>l.stage!=='Not Ready to Buy' && l.follow_up_date);
+  const fuOverdue   = fuTracked.filter(l=>new Date(l.follow_up_date)<now);
+  const fuAdherence = fuTracked.length>0 ? Math.max(100 - (fuOverdue.length/fuTracked.length)*200, 0) : 100;
 
   const scores = {
-    'Win Rate':   {score: Math.min(winRate/50*100,100),   weight:30},
-    'Lead Volume':{score: Math.min(parseFloat(dailyAvg)/5*100,100), weight:15},
-    'Stale Leads':{score: Math.max(100-staleRatio*200,0),weight:20},
+    'Win Rate':   {score: Math.min(winRate/50*100,100),   weight:25},
+    'Lead Volume':{score: Math.min(parseFloat(dailyAvg)/5*100,100), weight:10},
+    'Stale Leads':{score: Math.max(100-staleRatio*200,0),weight:15},
     'Enquiry Response':{score: pendingEnqs>0?Math.max(100-overdueEnqs/pendingEnqs*200,0):100, weight:15},
+    'Follow-up Adherence':{score: fuAdherence, weight:15},
     'Call Answer Rate':{score: callAnswerR*100, weight:10},
     'Pipeline Value':{score: Math.min(pipelineRev/50000*100,100), weight:10},
   };
@@ -5034,7 +5110,7 @@ function runAnalytics(){
   document.getElementById('an-health-score-text').textContent = `Grade ${healthGrade}`;
 
   const maxScore = 100;
-  const scoreColors = {'Win Rate':'var(--green)','Lead Volume':'var(--blue)','Stale Leads':'var(--orange)','Enquiry Response':'var(--purple)','Call Answer Rate':'var(--teal)','Pipeline Value':'var(--indigo)'};
+  const scoreColors = {'Win Rate':'var(--green)','Lead Volume':'var(--blue)','Stale Leads':'var(--orange)','Enquiry Response':'var(--purple)','Follow-up Adherence':'var(--amber)','Call Answer Rate':'var(--teal)','Pipeline Value':'var(--indigo)'};
   document.getElementById('an-health-breakdown').innerHTML = Object.entries(scores).map(([k,v])=>`
     <div class="bar-row">
       <div class="bar-label">${k}</div>
@@ -6471,6 +6547,18 @@ function dsMelDay(d){
   return dt.toLocaleDateString('en-AU',{timeZone:'Australia/Melbourne',year:'numeric',month:'2-digit',day:'2-digit'});
 }
 
+function dsDayKey(d){
+  if(!d) return '';
+  let dt;
+  if(typeof d==='string' && /\d{1,2}\s+\w{3}\s+\d{4}/.test(d)){
+    const m = d.match(/(\d{1,2})\s+(\w{3})\s+(\d{4})/);
+    dt = new Date(m[2]+' '+m[1]+' '+m[3]);
+  } else { dt = new Date(d); }
+  if(isNaN(dt)) return '';
+  const p = dt.toLocaleDateString('en-AU',{timeZone:'Australia/Melbourne',year:'numeric',month:'2-digit',day:'2-digit'}).split('/');
+  return p[2]+'-'+p[1]+'-'+p[0];
+}
+
 function dsParseVal(v){ if(!v) return 0; const n=parseInt((v+'').replace(/[^0-9]/g,'')); return isNaN(n)?0:n; }
 
 function renderDailySummary(){
@@ -6489,24 +6577,40 @@ function renderDailySummary(){
   }
 
   const all = Object.entries(DATA).flatMap(([stage,leads])=>leads.map(l=>({...l,stage})));
-  const newLeads = all.filter(l=>dsMelDay(l.date)===targetDay);
+  const newLeads = all.filter(l=>dsMelDay(l.created_at||l.date)===targetDay);
   const booked = all.filter(l=>l.stage==='Won' && l.booking_date && dsMelDay(l.booking_date)===targetDay);
+  const won = all.filter(l=>l.stage==='Won' && l.won_date && dsMelDay(l.won_date)===targetDay);
   const lost = all.filter(l=>{
     if(l.stage!=='Closed') return false;
+    if(l.closed_at) return dsMelDay(l.closed_at)===targetDay;
     const m = (l.notes||'').match(/\[(\d{1,2}\s+\w{3}\s+\d{4})\]\s*(?:CLOSED|NOT READY)/);
     return m && dsMelDay(m[1])===targetDay;
   });
   const now = new Date();
   const cold = all.filter(l=>!['Won','Closed','Not Ready to Buy'].includes(l.stage) && l.follow_up_date && new Date(l.follow_up_date)<now);
   const needEst = all.filter(l=>!['Won','Closed','Not Ready to Buy'].includes(l.stage) && (!l.value||dsParseVal(l.value)===0));
+  const targetKey = dsDayKey(dsDate);
+  const missedFu = all.filter(l=>{
+    if(['Won','Closed','Not Ready to Buy'].includes(l.stage)) return false;
+    return l.follow_up_date && dsDayKey(l.follow_up_date)===targetKey;
+  });
+  const overdueFu = all.filter(l=>{
+    if(['Won','Closed','Not Ready to Buy'].includes(l.stage)) return false;
+    const k = dsDayKey(l.follow_up_date);
+    return k && k < targetKey;
+  });
 
   document.getElementById('ds-new-count').textContent    = newLeads.length;
   document.getElementById('ds-booked-count').textContent = booked.length;
   const bookedRev = booked.reduce((s,l)=>s+dsParseVal(l.value),0);
+  const wonRev = won.reduce((s,l)=>s+dsParseVal(l.value),0);
   document.getElementById('ds-revenue').textContent      = '$'+bookedRev.toLocaleString();
+  document.getElementById('ds-won-count').textContent     = won.length;
+  document.getElementById('ds-won-rev').textContent       = '$'+wonRev.toLocaleString();
   document.getElementById('ds-cold-count').textContent   = cold.length;
   document.getElementById('ds-lost-count').textContent   = lost.length;
   document.getElementById('ds-needest-count').textContent= needEst.length;
+  document.getElementById('ds-missedfu-count').textContent = missedFu.length;
 
   const chanCounts = {};
   newLeads.forEach(l=>{ const s=l.source||'Other'; chanCounts[s]=(chanCounts[s]||0)+1; });
@@ -6537,6 +6641,15 @@ function renderDailySummary(){
     '<div class="ds-item-meta">'+esc(l.enquiry||'—')+' · '+esc(l.source||'—')+(l.division?' · '+esc(l.division):'')+'</div>'+
     '<div class="ds-item-val kv-green">'+esc(l.value||'$0')+'</div></div>').join('') : '<div class="ds-empty">No bookings on this day</div>';
 
+  document.getElementById('ds-won-detail-count').textContent = won.length;
+  document.getElementById('ds-won-detail-rev').textContent = '$'+wonRev.toLocaleString();
+  document.getElementById('ds-won-list').innerHTML = won.length ? won.map(l=>
+    '<div class="ds-item" onclick="dsOpenLead(\''+l.id+'\',\''+l.stage+'\')">'+
+    '<div class="ds-item-dot" style="background:var(--green)"></div>'+
+    '<div class="ds-item-name">'+esc(l.name||'Unknown')+'</div>'+
+    '<div class="ds-item-meta">'+esc(l.enquiry||'—')+' · '+esc(l.source||'—')+(l.division?' · '+esc(l.division):'')+'</div>'+
+    '<div class="ds-item-val kv-green">'+esc(l.value||'$0')+'</div></div>').join('') : '<div class="ds-empty">No leads won on this day</div>';
+
   document.getElementById('ds-cold-detail-count').textContent = cold.length;
   document.getElementById('ds-cold-list').innerHTML = cold.length ? cold.map(l=>{
     const days = Math.floor((now-new Date(l.follow_up_date))/(864e5));
@@ -6546,6 +6659,20 @@ function renderDailySummary(){
       '<div class="ds-item-meta">'+esc(l.enquiry||'—')+' · '+esc(l.source||'—')+' · '+esc(l.stage)+'</div>'+
       '<span class="ds-item-flag">'+days+'d overdue</span></div>';
   }).join('') : '<div class="ds-empty">Nothing overdue — all follow-ups on track 🎉</div>';
+
+  document.getElementById('ds-missedfu-detail-count').textContent = missedFu.length + overdueFu.length;
+  const fuItem = (l, tag) =>
+    '<div class="ds-item" onclick="dsOpenLead(\''+l.id+'\',\''+l.stage+'\')">'+
+    '<div class="ds-item-dot" style="background:var(--orange)"></div>'+
+    '<div class="ds-item-name">'+esc(l.name||'Unknown')+'</div>'+
+    '<div class="ds-item-meta">'+esc(l.enquiry||'—')+' · '+esc(l.source||'—')+' · '+esc(l.stage)+'</div>'+
+    '<span class="ds-item-flag">'+tag+'</span></div>';
+  const fuMissed = missedFu.map(l=>fuItem(l, isToday?'due today':'missed')).join('');
+  const fuOverdue = overdueFu.map(l=>{
+    const d = Math.floor((dsDate - new Date(l.follow_up_date)) / 864e5);
+    return fuItem(l, (d>0?d:1)+'d overdue');
+  }).join('');
+  document.getElementById('ds-missedfu-list').innerHTML = (fuMissed + fuOverdue) || '<div class="ds-empty">No missed follow-ups 🎉</div>';
 
   document.getElementById('ds-needest-detail-count').textContent = needEst.length;
   document.getElementById('ds-needest-list').innerHTML = needEst.length ? needEst.slice(0,30).map(l=>
@@ -6559,12 +6686,12 @@ function renderDailySummary(){
   const lostVal = lost.reduce((s,l)=>s+dsParseVal(l.value),0);
   document.getElementById('ds-lost-detail-val').textContent = '$'+lostVal.toLocaleString();
   const reasonGroups = {};
-  lost.forEach(l=>{ const m=(l.notes||'').match(/(?:CLOSED|NOT READY TO BUY)\s*—\s*([^\n]+)/); const r=m?m[1].trim():'Unknown reason'; if(!reasonGroups[r])reasonGroups[r]={count:0,val:0}; reasonGroups[r].count++; reasonGroups[r].val+=dsParseVal(l.value); });
+  lost.forEach(l=>{ const m=(l.notes||'').match(/(?:CLOSED|NOT READY TO BUY)\s*—\s*([^\n]+)/); const r=m?m[1].trim():(l.close_reason||'Unknown reason'); if(!reasonGroups[r])reasonGroups[r]={count:0,val:0}; reasonGroups[r].count++; reasonGroups[r].val+=dsParseVal(l.value); });
   document.getElementById('ds-lost-grouped').innerHTML = Object.entries(reasonGroups).map(([r,d])=>
     '<div class="ds-lost-group">'+esc(r)+': '+d.count+' · $'+d.val.toLocaleString()+'</div>').join('');
   document.getElementById('ds-lost-list').innerHTML = lost.length ? lost.map(l=>{
     const m = (l.notes||'').match(/(?:CLOSED|NOT READY TO BUY)\s*—\s*([^\n]+)/);
-    const reason = m ? m[1].trim() : '—';
+    const reason = m ? m[1].trim() : (l.close_reason || '—');
     return '<div class="ds-item" onclick="dsOpenLead(\''+l.id+'\',\''+l.stage+'\')">'+
       '<div class="ds-item-dot" style="background:var(--red)"></div>'+
       '<div class="ds-item-name">'+esc(l.name||'Unknown')+'</div>'+
@@ -6582,10 +6709,12 @@ function copyDailySummary(){
   const targetDay = dsMelDay(dsDate);
   const dateLabel = dsDate.toLocaleDateString('en-AU',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'Australia/Melbourne'});
   const all = Object.entries(DATA).flatMap(([stage,leads])=>leads.map(l=>({...l,stage})));
-  const newLeads = all.filter(l=>dsMelDay(l.date)===targetDay);
+  const newLeads = all.filter(l=>dsMelDay(l.created_at||l.date)===targetDay);
   const booked = all.filter(l=>l.stage==='Won' && l.booking_date && dsMelDay(l.booking_date)===targetDay);
+  const won = all.filter(l=>l.stage==='Won' && l.won_date && dsMelDay(l.won_date)===targetDay);
   const bookedRev = booked.reduce((s,l)=>s+dsParseVal(l.value),0);
-  const lost = all.filter(l=>{ if(l.stage!=='Closed') return false; const m=(l.notes||'').match(/\[(\d{1,2}\s+\w{3}\s+\d{4})\]\s*CLOSED/); return m && dsMelDay(m[1])===targetDay; });
+  const wonRev = won.reduce((s,l)=>s+dsParseVal(l.value),0);
+  const lost = all.filter(l=>{ if(l.stage!=='Closed') return false; if(l.closed_at) return dsMelDay(l.closed_at)===targetDay; const m=(l.notes||'').match(/\[(\d{1,2}\s+\w{3}\s+\d{4})\]\s*CLOSED/); return m && dsMelDay(m[1])===targetDay; });
   const lostVal = lost.reduce((s,l)=>s+dsParseVal(l.value),0);
   const now = new Date();
   const cold = all.filter(l=>!['Won','Closed','Not Ready to Buy'].includes(l.stage) && l.follow_up_date && new Date(l.follow_up_date)<now);
@@ -6596,11 +6725,11 @@ function copyDailySummary(){
   const chanLines = Object.entries(chanCounts).sort((a,b)=>b[1]-a[1]).map(([n,c])=>'  '+n+': '+c).join('\n');
 
   const reasonGroups = {};
-  lost.forEach(l=>{ const m=(l.notes||'').match(/CLOSED\s*—\s*([^\n]+)/); const r=m?m[1].trim():'Unknown'; if(!reasonGroups[r])reasonGroups[r]={count:0,val:0}; reasonGroups[r].count++; reasonGroups[r].val+=dsParseVal(l.value); });
+  lost.forEach(l=>{ const m=(l.notes||'').match(/CLOSED\s*—\s*([^\n]+)/); const r=m?m[1].trim():(l.close_reason||'Unknown'); if(!reasonGroups[r])reasonGroups[r]={count:0,val:0}; reasonGroups[r].count++; reasonGroups[r].val+=dsParseVal(l.value); });
   const lostLines = Object.entries(reasonGroups).map(([r,d])=>'  '+r+': '+d.count+' | $'+d.val.toLocaleString()).join('\n');
 
   let txt = 'DHF Daily Summary — '+dateLabel+'\n\n';
-  txt += '1. LEADS & BOOKINGS\n  New Leads: '+newLeads.length+' | Booked: '+booked.length+' | Revenue: $'+bookedRev.toLocaleString()+'\n\n';
+  txt += '1. LEADS & BOOKINGS\n  New Leads: '+newLeads.length+' | Won: '+won.length+' ($'+wonRev.toLocaleString()+') | Booked: '+booked.length+' | Revenue: $'+bookedRev.toLocaleString()+'\n\n';
   txt += 'NEW LEADS BY CHANNEL\n'+(chanLines||'  None')+'\n\n';
   txt += '2. WENT COLD — ACTION NEEDED ('+cold.length+')\n';
   txt += cold.length ? cold.map(l=>{ const d=Math.floor((now-new Date(l.follow_up_date))/(864e5)); return '  • '+l.name+' — '+(l.enquiry||'—')+' — '+(l.source||'—')+' — '+d+'d overdue'; }).join('\n')+'\n\n' : '  None\n\n';
@@ -6640,13 +6769,66 @@ render = function(){
 };
 
 // ── INBOUND CALL (guided flow for front-desk / inbound sales) ─────────────
+// ── PHONE AUTOFILL ────────────────────────────────────────────────────────
+// When logging an inbound call, if the caller's phone already matches a
+// CRM lead (in-memory DATA) or a desk_customers row, autofill the name so
+// front-desk doesn't re-type a returning customer.
+function normalizePhone(s){
+  if(!s)return '';
+  var d=String(s).replace(/\D/g,'');
+  if(d.length>=10&&d.slice(0,2)==='61')d='0'+d.slice(2); // +61 4xx → 04xx
+  return d;
+}
+function findLeadByPhone(norm){
+  for(var i=0;i<STAGES.length;i++){
+    var arr=DATA[STAGES[i]]||[];
+    for(var j=0;j<arr.length;j++){
+      if(normalizePhone(arr[j].phone)===norm)return arr[j];
+    }
+  }
+  return null;
+}
+var _ibPhoneTimer=null;
+function onIbPhoneInput(el){
+  var hint=document.getElementById('ib-customer-hint');
+  var norm=normalizePhone((el.value||'').trim());
+  clearTimeout(_ibPhoneTimer);
+  if(hint){ if(norm.length<8){ hint.textContent=''; hint.classList.remove('match'); } }
+  if(norm.length<8)return;
+  _ibPhoneTimer=setTimeout(function(){
+    // 1) CRM leads already in memory (fastest, most complete)
+    var lead=findLeadByPhone(norm);
+    if(lead){
+      var nf=document.getElementById('ib-name');
+      if(nf&&!nf.value.trim())nf.value=lead.name||'';
+      if(hint){ hint.textContent='✓ Existing lead: '+(lead.name||'')+(lead.email?' · '+lead.email:''); hint.classList.add('match'); }
+      return;
+    }
+    // 2) desk_customers (Desk's customer table, via authenticated client)
+    if(window.deskSb){
+      deskSb.from('desk_customers').select('id,name,mobile,phone,email')
+        .or('mobile.eq.'+norm+',phone.eq.'+norm).limit(1)
+        .then(function(r){
+          var c=r.data&&r.data[0];
+          if(c){
+            var nf=document.getElementById('ib-name');
+            if(nf&&!nf.value.trim())nf.value=c.name||'';
+            if(hint){ hint.textContent='✓ Existing customer: '+(c.name||'')+(c.email?' · '+c.email:''); hint.classList.add('match'); }
+          }else{
+            if(hint){ hint.textContent=''; hint.classList.remove('match'); }
+          }
+        }).catch(function(){});
+    }
+  },350);
+}
+
 let ibStep=0;
 function openInboundCall(){
   ibStep=0;
   const nm=(CURRENT_USER && CURRENT_USER.name)||'DHF';
   const el=document.getElementById('ib-script-name');
   if(el) el.textContent=nm;
-  ['ib-name','ib-phone','ib-vehicle','ib-needs','ib-quote','ib-followup','ib-notes'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  ['ib-name','ib-phone','ib-vehicle','ib-rego','ib-needs','ib-quote','ib-followup','ib-notes'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
   ['ib-service','ib-accepted','ib-nextstep'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
   ibRender();
   document.getElementById('inboundCallOverlay').classList.add('open');
@@ -6684,12 +6866,14 @@ async function ibSave(){
   const accepted=document.getElementById('ib-accepted').value;
   const followup=document.getElementById('ib-followup').value;
   const vehicle=document.getElementById('ib-vehicle').value.trim();
+  const rego=document.getElementById('ib-rego').value.trim();
   const needs=document.getElementById('ib-needs').value.trim();
   const service=document.getElementById('ib-service').value;
   const notes=document.getElementById('ib-notes').value.trim();
 
   const noteParts=[];
   if(vehicle) noteParts.push('Vehicle: '+vehicle);
+  if(rego) noteParts.push('Rego: '+rego);
   if(needs) noteParts.push(needs);
   if(notes) noteParts.push(notes);
 
@@ -6758,6 +6942,8 @@ async function ibSave(){
 .ib-field label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:5px}
 .ib-field input,.ib-field select,.ib-field textarea{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;background:var(--surface);outline:none;user-select:text;box-sizing:border-box;color:var(--text)}
 .ib-field input:focus,.ib-field select:focus,.ib-field textarea:focus{border-color:var(--green)}
+.ib-customer-hint{font-size:12px;color:var(--muted);margin:-6px 0 12px;min-height:16px}
+.ib-customer-hint.match{color:var(--green);font-weight:600}
 .ib-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .ib-cadence{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .ib-cadence button{border:1px solid var(--border);background:var(--surface);border-radius:14px;padding:5px 12px;font-size:12px;cursor:pointer;color:var(--muted);font-weight:600}
@@ -6791,13 +6977,17 @@ async function ibSave(){
       <div class="ib-step active" id="ib-step-0">
         <div class="ib-script"><span class="ib-script-label">🗣 Say</span>Thanks for calling DHF Tyres, you're speaking with <b id="ib-script-name">Keenan</b>. How can I help you today?</div>
         <div class="ib-field"><label>Customer name *</label><input type="text" id="ib-name" placeholder="Customer's name" onkeydown="if(event.key==='Enter')ibNext()"></div>
-        <div class="ib-field"><label>Phone / Caller ID</label><input type="text" id="ib-phone" placeholder="(03) 9xxx xxxx or mobile"></div>
+        <div class="ib-field"><label>Phone / Caller ID</label><input type="text" id="ib-phone" placeholder="(03) 9xxx xxxx or mobile" oninput="onIbPhoneInput(this)"></div>
+        <div class="ib-customer-hint" id="ib-customer-hint"></div>
         <div class="ib-step-note">* required to continue</div>
       </div>
 
       <div class="ib-step" id="ib-step-1">
         <div class="ib-script"><span class="ib-script-label">🗣 Say</span>And what vehicle is it, and what do you need done today?</div>
-        <div class="ib-field"><label>Vehicle</label><input type="text" id="ib-vehicle" placeholder="e.g. Toyota Hilux, ABC123"></div>
+        <div class="ib-row">
+          <div class="ib-field"><label>Vehicle</label><input type="text" id="ib-vehicle" placeholder="e.g. Toyota Hilux"></div>
+          <div class="ib-field"><label>Rego</label><input type="text" id="ib-rego" placeholder="e.g. ABC123"></div>
+        </div>
         <div class="ib-field"><label>Service type</label>
           <select id="ib-service">
             <option value="">-- Select --</option>
