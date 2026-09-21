@@ -22,6 +22,7 @@ decisions, and the gotchas worth knowing before touching the code.
   1. DevOps framework: environments, CI/CD, security scanning, Supabase integration
   2. Bug backlog
 - **Scope/arrangement:** not confirmed in writing yet. See the Trello card "Scope the engagement with Dinuka properly".
+- **❓ Open question — is the site actually live?** Lahiru's position (2026-09-21) is that it "isn't necessarily live", which is why SDLC controls are kept loose for now. But `master` auto-publishes to the public URL, the database holds real customer records and invoices, and the 2026-09-08 incident was handled as a production outage affecting the workshop. **Confirm with Dinuka.** The answer changes how cautious to be about the RLS work, about merging, and about when issue #7's bypasses come off.
 - **Access we have today:**
   - GitHub: **org Owner** on `dhf-organisation` (confirmed 2026-09-21) — rulesets, environments and security settings are available.
   - Netlify + Supabase: access granted 2026-09-16 (Netlify team `dinuka`, Supabase org `fhyhrpvrmpmnzbrypows`). Supabase PAT and Netlify token are on this machine in `~/.config/dhf-desk/env` (chmod 600, **never** in the repo).
@@ -32,7 +33,11 @@ decisions, and the gotchas worth knowing before touching the code.
 > ⚠️ **The Supabase PAT in `~/.config/dhf-desk/env` runs SQL as the `postgres` superuser on production.** Read-only queries unless the user explicitly approves a write. Endpoint: `POST /v1/projects/{ref}/database/query` (no DB password needed).
 
 > 🚨 **Merging or pushing to `master` DEPLOYS TO PRODUCTION.** Netlify site "dhf-desk" (ID `c72c0d97-fae8-4980-b052-85e55879375d`) auto-publishes `master`. Confirmed 2026-09-15 when merging PR #2 deployed within about a minute.
-> - Never push to `master` directly; there's no branch protection yet.
+> - Never push to `master` directly. Two rulesets exist (2026-09-21), but **they will not stop you**:
+>   - `master: no force-push or deletion` — no bypass, applies to everyone.
+>   - `master: PR + CI (admins bypass until go-live)` — requires a PR (0 approvals) and the four CI checks, but **Lahiru and Dinuka bypass it as org Owners**. Deliberate: low friction while iterating, per Lahiru 2026-09-21.
+>   - ⚠️ So a direct push to `master` will *succeed* and *deploy to production*. The rule against it is a working agreement, not an enforced control. Ask first, every time.
+>   - Removing the bypasses is tracked as GitHub issue #7, labelled `pre-go-live`.
 > - ✅ **Publishing is now limited to app files** (`netlify.toml`, PR #3, 2026-09-21). `netlify.toml` builds `dist/` from an explicit `cp` list. Verified on prod: `/deploy.sh`, `/CLAUDE.md`, `/netlify.toml`, `/scripts/*` all 404.
 >   - **A new file not added to that `cp` list will 404 in production** while working locally. `scripts/check-publish-list.mjs` fails CI when a page references an unpublished file.
 > - PR deploy previews are public, and are backed by the **production** database.
