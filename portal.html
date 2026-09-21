@@ -113,7 +113,10 @@ const sb=supabase.createClient(SB_URL,SB_KEY);
 const STATUS_LABEL={booking:'Booked In',in_progress:'Being Worked On',on_hold:'On Hold',finished:'Ready for Pickup!'};
 let pendingEmail=null;
 
-function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
+// Escapes for HTML TEXT and for QUOTED ATTRIBUTE VALUES. The
+// textContent/innerHTML trick only escapes & < >, so quotes are added
+// explicitly — otherwise user text inside an attribute can close it.
+function esc(s){const d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function fmtDate(iso){return iso?new Date(iso).toLocaleDateString('en-AU',{day:'numeric',month:'short'}):''}
 
 function renderSignIn(errMsg){
