@@ -8,10 +8,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
-// `\s*` before the closing `>` is deliberate: HTML treats `</script >` as a
-// valid end tag, and a regex that only matches `</script>` would run straight
-// past it and swallow the rest of the file as one script body.
-const SCRIPT = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
+// The end-tag pattern is permissive on purpose. HTML ends a script at
+// `</script>`, `</script >`, and even `</script foo="bar">` — an end tag may
+// carry attributes, which are ignored. A regex matching only `</script>`
+// would run straight past those and swallow the rest of the file as a single
+// script body, hiding any real syntax error further down.
+const SCRIPT = /<script\b([^>]*)>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi;
 const tmp = mkdtempSync(join(tmpdir(), 'dhf-inline-'));
 let checked = 0;
 let failed = 0;
