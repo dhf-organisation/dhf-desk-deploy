@@ -45,6 +45,9 @@ jobs:
       - name: Publish allowlist is complete
         run: node scripts/check-publish-list.mjs
 
+      - name: No escaping across HTML/JS context boundaries
+        run: node scripts/check-html-contexts.mjs
+
       - name: Netlify build produces the expected files
         run: |
           set -e

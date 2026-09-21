@@ -455,7 +455,25 @@ function quickAddSupplier(){
   openSupplierModal();
 }
 
-function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
+// Escapes for HTML TEXT and for QUOTED ATTRIBUTE VALUES.
+// The textContent/innerHTML trick only escapes & < >, so quotes are added
+// explicitly — without them, user text inside title="…" or value="…" can
+// close the attribute and inject new ones.
+function esc(s){const d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+
+// Use this — NOT esc() — for a value going into a JS string inside an
+// attribute, e.g. onclick="fn(${jsArg(name)})". Note there are no quotes
+// around it: JSON.stringify supplies them.
+//
+// esc() is actively WRONG here. The browser HTML-decodes the attribute
+// before parsing the JS, so esc()'s &#39; turns back into a bare quote and
+// terminates the string early — the handler then fails to compile and the
+// control silently does nothing. Verified in a browser, not assumed.
+//
+// JSON.stringify handles the JS layer (quotes, backslashes, newlines); the
+// replaces handle the HTML layer, and decoding them yields exactly the JSON
+// literal again.
+function jsArg(v){return JSON.stringify(v==null?'':String(v)).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function truncate(s,n){return s&&s.length>n?s.slice(0,n-1).trimEnd()+'…':(s||'')}
 function showToast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3000)}
 function closeModal(){document.querySelectorAll('.modal-overlay').forEach(o=>o.remove())}
@@ -1479,7 +1497,7 @@ function onPosCustomerSearch(term){
   const matches=customers.filter(c=>c.name.toLowerCase().includes(t)).slice(0,8);
   let h='<div class="autocomplete-list">';
   matches.forEach(c=>{h+=`<div class="autocomplete-item" onclick="selectPosCustomer('${c.id}')">${esc(c.name)}${c.mobile?' · '+esc(c.mobile):''}</div>`});
-  h+=`<div class="autocomplete-item create-new" onclick="selectPosNewCustomer('${esc(term.trim()).replace(/'/g,"\\'")}')">+ Create new customer "${esc(term.trim())}"</div>`;
+  h+=`<div class="autocomplete-item create-new" onclick="selectPosNewCustomer(${jsArg(term.trim())})">+ Create new customer "${esc(term.trim())}"</div>`;
   h+='</div>';
   results.innerHTML=h;
 }
@@ -4783,7 +4801,7 @@ function supplierStockAgeLabel(iso){
 // survives re-renders because we also patch the in-memory row.
 function supplierCostRequestCell(r){
   if(r.cost_requested_at)return `<span style="font-size:12px;color:var(--text-secondary)">Requested</span>`;
-  return `<button class="btn-link" style="font-size:12px;padding:0" onclick="requestSupplierCost('${esc(r.supplier)}','${esc(r.sku)}',this)">Get cost</button>`;
+  return `<button class="btn-link" style="font-size:12px;padding:0" onclick="requestSupplierCost(${jsArg(r.supplier)},${jsArg(r.sku)},this)">Get cost</button>`;
 }
 
 async function requestSupplierCost(supplier,sku,btn){
@@ -7172,7 +7190,7 @@ function onFollowUpCustomerSearch(term){
   followUpCustomerId=null;
   if(!t){results.innerHTML='';return}
   const matches=customers.filter(c=>c.name.toLowerCase().includes(t)).slice(0,8);
-  results.innerHTML=matches.length?matches.map(c=>`<div class="autocomplete-item" onclick="selectFollowUpCustomer('${c.id}','${esc(c.name).replace(/'/g,"\\'")}')">${esc(c.name)}${c.mobile?' · '+esc(c.mobile):''}</div>`).join(''):'<div class="autocomplete-item" style="color:var(--text-secondary)">No matching customer</div>';
+  results.innerHTML=matches.length?matches.map(c=>`<div class="autocomplete-item" onclick="selectFollowUpCustomer(${jsArg(c.id)},${jsArg(c.name)})">${esc(c.name)}${c.mobile?' · '+esc(c.mobile):''}</div>`).join(''):'<div class="autocomplete-item" style="color:var(--text-secondary)">No matching customer</div>';
 }
 function selectFollowUpCustomer(id,name){
   followUpCustomerId=id;

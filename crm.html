@@ -2751,7 +2751,16 @@ setInterval(()=>{if(!isDragging)syncChanges();},30000);
 function eq(e){e=(e||'').toLowerCase();if(e.includes('tyre'))return'eq-tyres';if(e.includes('mech'))return'eq-mechanical';if(e.includes('road'))return'eq-roadworthy';if(e.includes('align'))return'eq-alignment';if(e.includes('log'))return'eq-logbook';if(e.includes('inspect'))return'eq-inspection';return'eq-other';}
 function pv(v){return v?parseInt((v+'').replace(/[$,]/g,''))||0:0;}
 function fv(v){const n=pv(v);return n>0?'$'+n.toLocaleString():'';}
-function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+// Escapes for HTML TEXT and for QUOTED ATTRIBUTE VALUES. The
+// textContent/innerHTML trick only escapes & < >, so quotes are added
+// explicitly — otherwise user text inside title="…" can close the attribute.
+function esc(s){const d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML.replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+// For a value going into a JS string inside an attribute:
+//   onclick="fn(${jsArg(name)})"     <- no quotes around it, JSON adds them
+// esc() is wrong there: the browser HTML-decodes the attribute before parsing
+// the JS, so &#39; becomes a bare quote and the handler fails to compile.
+function jsArg(v){return JSON.stringify(v==null?'':String(v)).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function sanitizeHTML(h){
   // Allow basic formatting HTML but strip scripts / event handlers / javascript: URLs.
   if(!h) return '';
@@ -4584,9 +4593,9 @@ function renderCallingPage(){
           :'—'}</td>
         <td><span style="font-weight:700;color:var(--orange)">${attempts} attempt${attempts!==1?'s':''}</span></td>
         <td><div class="call-action-btns" style="flex-wrap:wrap;gap:5px">
-          <button class="call-btn primary-btn" onclick="openLogCall('${item.id}','${esc(item.name)}','${esc(item.phone||'')}')">📞 Call Again</button>
-          <button class="call-btn" style="color:var(--green);border-color:var(--green);font-weight:700" onclick="closeFU2Lead('${item.id}','${esc(item.name)}','won')">🎉 Won</button>
-          <button class="call-btn" style="color:var(--red);border-color:var(--red);font-weight:700" onclick="closeFU2Lead('${item.id}','${esc(item.name)}','lost')">❌ Lost</button>
+          <button class="call-btn primary-btn" onclick="openLogCall(${jsArg(item.id)},${jsArg(item.name)},${jsArg(item.phone||'')})">📞 Call Again</button>
+          <button class="call-btn" style="color:var(--green);border-color:var(--green);font-weight:700" onclick="closeFU2Lead(${jsArg(item.id)},${jsArg(item.name)},'won')">🎉 Won</button>
+          <button class="call-btn" style="color:var(--red);border-color:var(--red);font-weight:700" onclick="closeFU2Lead(${jsArg(item.id)},${jsArg(item.name)},'lost')">❌ Lost</button>
           <button class="call-btn remove-btn" onclick="removeFromCallList('${item.id}')">✕</button>
         </div></td>
       </tr>`;
@@ -4621,7 +4630,7 @@ function renderCallingPage(){
           :'<span style="color:var(--muted);font-size:12px">Not called yet</span>'}</td>
         <td><div class="call-notes-preview">${esc(item.notes||'—')}</div></td>
         <td><div class="call-action-btns">
-          <button class="call-btn primary-btn" onclick="openLogCall('${item.id}','${esc(item.name)}','${esc(item.phone||'')}')">📞 Log Call</button>
+          <button class="call-btn primary-btn" onclick="openLogCall(${jsArg(item.id)},${jsArg(item.name)},${jsArg(item.phone||'')})">📞 Log Call</button>
           <button class="call-btn log-btn" onclick="changePriority('${item.id}')">Priority</button>
           <button class="call-btn remove-btn" onclick="removeFromCallList('${item.id}')">✕</button>
         </div></td>
@@ -6211,7 +6220,7 @@ function renderProjection(){
     }else{
       body=dayBookings.map(b=>`
         <div class="proj-booking">
-          <button class="pb-del" onclick="event.stopPropagation();projDeleteBooking('${b.id}','${esc(b.name)}')">✕</button>
+          <button class="pb-del" onclick="event.stopPropagation();projDeleteBooking(${jsArg(b.id)},${jsArg(b.name)})">✕</button>
           <div class="pb-name">${esc(b.name)}${b.job_no?` <span style="color:var(--muted);font-weight:400">#${esc(b.job_no)}</span>`:''}</div>
           <div style="color:var(--muted);font-size:10px">${b.job_type||''}${b.job_type&&b.source?' · ':''}${b.source||''}${b.service?` — ${esc(b.service)}`:''}</div>
           <div class="pb-val">$${(b.value||0).toLocaleString()}</div>
