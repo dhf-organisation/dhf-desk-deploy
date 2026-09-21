@@ -8,7 +8,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
-const SCRIPT = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+// `\s*` before the closing `>` is deliberate: HTML treats `</script >` as a
+// valid end tag, and a regex that only matches `</script>` would run straight
+// past it and swallow the rest of the file as one script body.
+const SCRIPT = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
 const tmp = mkdtempSync(join(tmpdir(), 'dhf-inline-'));
 let checked = 0;
 let failed = 0;
