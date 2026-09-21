@@ -3421,6 +3421,14 @@ function closedDateValue(lead, newStage){
   return null;
 }
 
+function nextFollowUpStage(current){
+  // Advance the follow-up ladder: Follow Up → 2nd Follow Up → Final Follow Up.
+  if(current === '2nd Follow Up') return 'Final Follow Up';
+  if(current === 'Final Follow Up') return 'Final Follow Up';
+  if(current === 'Follow Up') return '2nd Follow Up';
+  return 'Follow Up';
+}
+
 // Probed lazily — true once the leads table has the closed_at column (see migrations/closed_at.sql).
 let SUPPORTS_CLOSED_AT = null;
 async function supportsClosedAt(){
@@ -4812,9 +4820,23 @@ async function submitCallLog(){
       const lead = fromStage ? DATA[fromStage].find(l=>l.id===item.lead_id) : null;
       if(lead && fromStage && fromStage!=='Closed'){ doMove(lead,fromStage,'Closed'); showToast(`${item.name} moved to Closed`); }
     }
-    // No Answer / Voicemail → auto move to 2nd Follow Up section (visual only, flagged in log)
-    if(['No Answer','Voicemail'].includes(outcome)){
-      showToast(`🔄 ${item?.name||'Lead'} moved to 2nd Follow Up list`);
+    // Follow-up scheduled (2nd Follow Up / No Answer / Voicemail) → advance stage + set new date
+    if(['2nd Follow Up','No Answer','Voicemail'].includes(outcome) && item?.lead_id){
+      const fuFrom = Object.keys(DATA).find(s=>DATA[s].some(l=>l.id===item.lead_id));
+      const fuLead = fuFrom ? DATA[fuFrom].find(l=>l.id===item.lead_id) : null;
+      if(fuLead && fuFrom){
+        const next = nextFollowUpStage(fuFrom);
+        if(next !== fuFrom){
+          await doMove(fuLead, fuFrom, next);
+          showToast(`🔄 ${item.name||'Lead'} moved to ${next}`);
+        }
+        if(callbackDt){
+          const ns = Object.keys(DATA).find(k=>DATA[k].some(l=>l.id===fuLead.id));
+          if(ns){ const nl = DATA[ns].find(l=>l.id===fuLead.id); if(nl) nl.follow_up_date = callbackDt; }
+          sb.patch('leads', fuLead.id, {follow_up_date: callbackDt, updated_at: new Date().toISOString()}).catch(e=>console.error('fu date', e));
+          render();
+        }
+      }
     }
   } catch(e){
     sync('error');
