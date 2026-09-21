@@ -41,11 +41,29 @@ for (const h of MUST_HAVE_HEADERS) {
 // app.js..."), and a naive indexOf matches those comments instead of the
 // tags — which is exactly what made this check report a false failure on
 // every deploy until 2026-09-21.
+// Walk the document once rather than stripping comments with a regex first.
+// A single replace() pass can leave a `<!--` behind on nested or malformed
+// comments (CodeQL js/incomplete-multi-character-sanitization), and then the
+// tag scan reads commented-out markup as real. Skipping comment regions as we
+// go can't have that problem.
 const srcOrder = (html) => {
-  const withoutComments = html.replace(/<!--[\s\S]*?-->/g, '');
   const srcs = [];
-  for (const [, src] of withoutComments.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)) {
-    srcs.push(src);
+  let i = 0;
+  while (i < html.length) {
+    if (html.startsWith('<!--', i)) {
+      const end = html.indexOf('-->', i + 4);
+      i = end === -1 ? html.length : end + 3;
+      continue;
+    }
+    if (/^<script\b/i.test(html.slice(i, i + 8))) {
+      const gt = html.indexOf('>', i);
+      if (gt === -1) break;
+      const src = html.slice(i, gt).match(/\bsrc\s*=\s*["']([^"']+)["']/i);
+      if (src) srcs.push(src[1]);
+      i = gt + 1;
+      continue;
+    }
+    i++;
   }
   return srcs;
 };
