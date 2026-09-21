@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security problem
+    url: https://github.com/dhf-organisation/dhf-desk-deploy/security/advisories/new
+    about: Customer data exposed, a leaked key, or a way in without signing in — report privately, not as a public issue.
+  - name: Planning board (Trello)
+    url: https://trello.com/b/8pYZKWmY
+    about: Priorities, roadmap and anything not yet ready to be a branch.
