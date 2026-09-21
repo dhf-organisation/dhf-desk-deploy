@@ -2752,16 +2752,41 @@ function eq(e){e=(e||'').toLowerCase();if(e.includes('tyre'))return'eq-tyres';if
 function pv(v){return v?parseInt((v+'').replace(/[$,]/g,''))||0:0;}
 function fv(v){const n=pv(v);return n>0?'$'+n.toLocaleString():'';}
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+// Renders enquiry question/answer HTML, which comes from the contenteditable
+// RTE below (rteToolbar/rteCmd: bold, italic, underline, lists) — real
+// formatting is wanted here, so this can't just be textContent'd like esc().
+//
+// Previously a hand-written blocklist of regexes (strip a script element,
+// strip on*= handlers, strip javascript: URLs). That approach does not
+// work: a single-pass regex blocklist cannot cover every way to spell a
+// handler, and it doesn't even need to — nested tags alone break it. An
+// overlapping pair of script open/close tags, split apart by an extra
+// "scr" + "ipt" wrapper around the inner one, has its inner pair stripped
+// by the regex, and the surrounding fragments then read back as one live
+// script element. That was found and confirmed exploitable (7 of 8 standard
+// bypasses got through, tested directly against this exact function) during
+// the DevOps security pass, 2026-09-21 — see the private advisory and
+// GitHub #11/#21 for the related esc() issue.
+//
+// DOMPurify (loaded above, pinned + SRI) is an allowlist, not a blocklist:
+// it walks the actual parsed DOM and keeps only what's explicitly permitted,
+// so there's no "list of bad things" to be incomplete. The allowed tags
+// below are exactly what the RTE toolbar can produce, nothing else — no
+// attributes at all, so there's no href/style/data-* surface either.
 function sanitizeHTML(h){
-  // Allow basic formatting HTML but strip scripts / event handlers / javascript: URLs.
   if(!h) return '';
-  return String(h)
-    .replace(/<script[\s\S]*?<\/script>/gi,'')
-    .replace(/<style[\s\S]*?<\/style>/gi,'')
-    .replace(/\son\w+="[^"]*"/gi,'')
-    .replace(/\son\w+='[^']*'/gi,'')
-    .replace(/\shref="javascript:[^"]*"/gi,'')
-    .replace(/\ssrc="javascript:[^"]*"/gi,'');
+  if(typeof DOMPurify === 'undefined'){
+    // DOMPurify failed to load (CDN down, ad-blocker, offline). Fail closed:
+    // show the text with none of the formatting rather than risk running
+    // unsanitized HTML. A blank-looking answer is a bug report; a bypassed
+    // sanitizer is a security incident.
+    console.error('DOMPurify unavailable — rendering enquiry content as plain text');
+    return esc(h);
+  }
+  return DOMPurify.sanitize(String(h), {
+    ALLOWED_TAGS: ['b','strong','i','em','u','ul','ol','li','br','div','p'],
+    ALLOWED_ATTR: []
+  });
 }
 function rteIsEmpty(h){ return !h || String(h).replace(/<[^>]+>/g,'').replace(/&nbsp;/g,'').trim()===''; }
 function rteCmd(editorId, cmd){
