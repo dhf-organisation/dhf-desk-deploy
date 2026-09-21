@@ -7,7 +7,7 @@ if (!base) {
   process.exit(1);
 }
 
-const MUST_SERVE = ['/', '/app.js', '/portal.html', '/staff.html', '/crm.html', '/tokens.css', '/manifest.json'];
+const MUST_SERVE = ['/', '/app.js', '/portal.html', '/staff.html', '/crm.html', '/tokens.css', '/manifest.json', '/config.js'];
 // Anything here would mean the publish allowlist has broken.
 const MUST_404 = ['/deploy.sh', '/CLAUDE.md', '/netlify.toml', '/.git/HEAD', '/scripts/smoke.mjs', '/supabase/migrations'];
 const MUST_HAVE_HEADERS = ['content-security-policy', 'x-frame-options', 'x-content-type-options'];
@@ -35,11 +35,37 @@ for (const h of MUST_HAVE_HEADERS) {
 
 // The pages must load their config before any app script, or the app falls
 // back to production config in a non-production environment.
-const html = await (await fetch(base + '/')).text();
-if (html.includes('config.js')) {
-  const cfgAt = html.indexOf('config.js');
-  const appAt = html.indexOf('app.js');
-  say(cfgAt !== -1 && (appAt === -1 || cfgAt < appAt), 'config.js loads before app.js');
+//
+// Compare real <script src> tags, not raw substrings. The pages carry
+// comments that mention both filenames ("...before the stylesheet and before
+// app.js..."), and a naive indexOf matches those comments instead of the
+// tags — which is exactly what made this check report a false failure on
+// every deploy until 2026-09-21.
+const srcOrder = (html) => {
+  const withoutComments = html.replace(/<!--[\s\S]*?-->/g, '');
+  const srcs = [];
+  for (const [, src] of withoutComments.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)) {
+    srcs.push(src);
+  }
+  return srcs;
+};
+
+for (const page of ['/', '/staff.html', '/portal.html', '/crm.html']) {
+  const html = await (await fetch(base + page)).text();
+  const srcs = srcOrder(html);
+  const cfgAt = srcs.findIndex((s) => /(^|\/)config\.js(\?|$)/.test(s));
+  const appAt = srcs.findIndex((s) => /(^|\/)app\.js(\?|$)/.test(s));
+
+  if (cfgAt === -1) {
+    // Only index.html loads app.js, but every page needs its config.
+    say(false, `${page} loads config.js`);
+    continue;
+  }
+  if (appAt === -1) {
+    say(true, `${page} loads config.js (no app.js on this page)`);
+    continue;
+  }
+  say(cfgAt < appAt, `${page} loads config.js before app.js`);
 }
 
 console.log(failed ? `\n${failed} check(s) failed` : '\nall checks passed');
