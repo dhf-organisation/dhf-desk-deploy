@@ -1,0 +1,21 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# The existing pages are one enormous file each and are not consistently
+# indented. Don't let an editor reformat them wholesale — a whitespace-only
+# diff across 8,000 lines makes the real change impossible to review.
+[{index.html,app.js,portal.html,staff.html,crm.html}]
+trim_trailing_whitespace = false
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.sql]
+indent_size = 2

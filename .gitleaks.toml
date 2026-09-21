@@ -1,0 +1,79 @@
+# gitleaks configuration for DHF Desk.
+#
+# This app has no server: the browser talks straight to Supabase, so a couple
+# of keys are *supposed* to be in the page source. Those are allowlisted below
+# by exact pattern — narrowly, so that a genuinely secret credential in the
+# same file still fails the scan.
+#
+# The rule of thumb when something trips this scanner: if the key grants
+# access on its own, it's a secret and it must be rotated, not allowlisted.
+
+title = "DHF Desk"
+
+[extend]
+useDefault = true
+
+# ── Extra rules ────────────────────────────────────────────────────────────
+# The credentials that would actually hurt, made explicit so they can never be
+# mistaken for one of the public keys above.
+
+[[rules]]
+id = "supabase-secret-key"
+description = "Supabase secret/service-role key (bypasses row-level security)"
+regex = '''sb_secret_[A-Za-z0-9_\-]{20,}'''
+keywords = ["sb_secret_"]
+
+[[rules]]
+id = "supabase-service-role-jwt"
+description = "Supabase service-role JWT (bypasses row-level security)"
+regex = '''eyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]*c2VydmljZV9yb2xl[A-Za-z0-9_\-]*\.[A-Za-z0-9_\-]+'''
+keywords = ["service_role", "eyJ"]
+
+[[rules]]
+id = "netlify-auth-token"
+description = "Netlify personal access token"
+regex = '''(?i)netlify[_\-. ]?(auth[_\-. ]?)?token['"\s:=]{1,10}([a-zA-Z0-9_\-]{40,})'''
+keywords = ["netlify"]
+
+# ── Allowlists ─────────────────────────────────────────────────────────────
+
+[[allowlists]]
+description = """
+Supabase publishable ("anon") key. Public by design — it identifies the
+project and authorises nothing on its own. Row-level security, keyed off the
+verified Supabase Auth session, is what protects the data. Note this
+deliberately does NOT cover sb_secret_ keys or service-role JWTs.
+"""
+regexTarget = "match"
+regexes = ['''sb_publishable_[A-Za-z0-9_\-]{20,}''']
+
+[[allowlists]]
+description = """
+Google Maps browser API key, used for address autocomplete on the customer
+form. A browser key has to be in the page; it is protected by an HTTP-referrer
+restriction in Google Cloud, not by secrecy. Scoped to the files that legitimately
+need it — a Google key anywhere else still fails.
+
+condition = "AND" matters here: gitleaks ORs `paths` and `regexes` by default,
+which would allowlist this key in every file, and allowlist every secret in
+these files.
+"""
+condition = "AND"
+paths = [
+  '''^index\.html$''',
+  '''^config\.js$''',
+  '''^scripts/build-config\.mjs$''',
+]
+regexTarget = "match"
+regexes = ['''AIzaSy[A-Za-z0-9_\-]{33}''']
+
+[[allowlists]]
+description = "Documentation and this config describe key handling; they don't contain keys."
+paths = [
+  '''^\.gitleaks\.toml$''',
+  '''^docs/.*\.md$''',
+  '''^SECURITY\.md$''',
+  '''^CONTRIBUTING\.md$''',
+  '''^CLAUDE\.md$''',
+  '''^README\.md$''',
+]

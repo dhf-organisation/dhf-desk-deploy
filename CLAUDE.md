@@ -1,9 +1,17 @@
 # DHF Desk — project context
 
 @.claude/rules/trello-workflow.md
+@.claude/rules/github-workflow.md
 
-**Before doing any work, follow the Trello rule above:** every change needs a card
-on https://trello.com/b/8pYZKWmY (board "DHF Desk"), with labels and a checklist.
+**Before doing any work, follow the rules above:** every change needs a card on
+https://trello.com/b/8pYZKWmY (board "DHF Desk") with labels and a checklist, and
+reaches `master` through a branch and a PR — never a direct push.
+
+Contributor-facing documentation lives in [README.md](README.md),
+[CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and [docs/](docs/)
+(architecture, environments, release/rollback, database, security). This file is
+the working context that doesn't belong in public docs: current state, open
+decisions, and the gotchas worth knowing before touching the code.
 
 ## Engagement
 
@@ -15,17 +23,21 @@ on https://trello.com/b/8pYZKWmY (board "DHF Desk"), with labels and a checklist
   2. Bug backlog
 - **Scope/arrangement:** not confirmed in writing yet. See the Trello card "Scope the engagement with Dinuka properly".
 - **Access we have today:**
-  - GitHub: org **member** with **write** on `dhf-organisation/dhf-desk-deploy`. **Still not admin**, so rulesets, environments and security settings need Dinuka to make Lahiru an org Owner.
-  - Netlify + Supabase: access granted 2026-09-16 (Netlify team `dinuka`, Supabase org `fhyhrpvrmpmnzbrypows`). CLI on this machine isn't logged in to either yet.
+  - GitHub: **org Owner** on `dhf-organisation` (confirmed 2026-09-21) — rulesets, environments and security settings are available.
+  - Netlify + Supabase: access granted 2026-09-16 (Netlify team `dinuka`, Supabase org `fhyhrpvrmpmnzbrypows`). Supabase PAT and Netlify token are on this machine in `~/.config/dhf-desk/env` (chmod 600, **never** in the repo).
   - Google Cloud, Resend and Twilio: no access yet
   - Can't sign into the app: staff login is limited to `@dhftyres.com.au` plus `dushentissera@gmail.com`
-- **The repo is PUBLIC.** Whether to make it private is an open P0 decision.
+- **The repo is PUBLIC.** Whether to make it private is an open P0 decision, and it **blocks committing the schema baseline**. Note CodeQL and secret scanning are free on public repos and need GitHub Advanced Security if it goes private.
 
-> 🚨 **Merging or pushing to `master` DEPLOYS TO PRODUCTION.** Netlify site "dhf-desk" (ID `c72c0d97-fae8-4980-b052-85e55879375d`) auto-publishes `master`, built from the **repo root**. Confirmed 2026-09-15 when merging PR #2 deployed within about a minute.
+> ⚠️ **The Supabase PAT in `~/.config/dhf-desk/env` runs SQL as the `postgres` superuser on production.** Read-only queries unless the user explicitly approves a write. Endpoint: `POST /v1/projects/{ref}/database/query` (no DB password needed).
+
+> 🚨 **Merging or pushing to `master` DEPLOYS TO PRODUCTION.** Netlify site "dhf-desk" (ID `c72c0d97-fae8-4980-b052-85e55879375d`) auto-publishes `master`. Confirmed 2026-09-15 when merging PR #2 deployed within about a minute.
 > - Never push to `master` directly; there's no branch protection yet.
-> - Root files get published: `/deploy.sh` is live, and **`/CLAUDE.md` would be too, so don't merge this doc to `master`** until publishing is limited to app files (https://trello.com/c/mccB8VwM).
-> - PR deploy previews are public and also serve root files.
-> - There is a second production deploy path: Dinuka's CLI/agent deploys from `/home/dinuka/AI/dhf-desk-deploy` (not a git repo). The two can overwrite each other.
+> - ✅ **Publishing is now limited to app files** (`netlify.toml`, PR #3, 2026-09-21). `netlify.toml` builds `dist/` from an explicit `cp` list. Verified on prod: `/deploy.sh`, `/CLAUDE.md`, `/netlify.toml`, `/scripts/*` all 404.
+>   - **A new file not added to that `cp` list will 404 in production** while working locally. `scripts/check-publish-list.mjs` fails CI when a page references an unpublished file.
+> - PR deploy previews are public, and are backed by the **production** database.
+> - **Netlify was repointed to `dhf-organisation/dhf-desk-deploy` on 2026-09-21** (it had still been linked to Dinuka's personal repo, so pushes here weren't deploying). Verified: published deploy now comes from a git commit, not a CLI upload.
+> - There is a second production deploy path: Dinuka's CLI/agent deploys from `/home/dinuka/AI/dhf-desk-deploy` (not a git repo). The two can overwrite each other — suspect this first if live ≠ `master` with no merge.
 >
 > ✅ **Repo = live site (as of 2026-09-15).**
 > - PR #2 (merge `67e47d6`) synced GitHub with production, adding `tokens.css` and `crm.html`.
@@ -169,6 +181,39 @@ Rules this plan implies from day one:
 - Every new table ships with RLS and tests
 - Migrations follow expand/contract so the previous front-end keeps working
 
+## CI and repo tooling (added 2026-09-21)
+
+| Workflow | Trigger | Does |
+|---|---|---|
+| `.github/workflows/ci.yml` | PR, push to master | `node --check app.js`, inline-script syntax check, publish-allowlist check, Netlify build produces a clean `dist/`; migration naming/safety |
+| `.github/workflows/codeql.yml` | PR, push, weekly | JavaScript static analysis |
+| `.github/workflows/secrets-scan.yml` | PR, push, weekly | gitleaks (full history on the schedule) |
+| `.github/workflows/post-deploy-smoke.yml` | push to master | Waits ~90s, then `scripts/smoke.mjs` against prod |
+
+Scripts (all plain Node, no dependencies, runnable locally):
+- `scripts/check-publish-list.mjs` — page references vs the `netlify.toml` `cp` list
+- `scripts/check-inline-scripts.mjs` — syntax-checks every inline `<script>`; **this is where most of the app's code lives**, so `node --check app.js` alone proves little
+- `scripts/check-migrations.mjs` — filename format; destructive SQL must declare `-- destructive: <reason>` on line 1
+- `scripts/smoke.mjs <base-url>` — read-only: app files served, internal files 404, security headers present, script order correct
+
+Actions are SHA-pinned; Dependabot watches them weekly.
+
+## Open security work
+
+Tracked on Trello, **not described here** — this repo is public and some of it
+is still live. The one constraint that shapes the work:
+
+> `crm.html` authorises every REST call with the **publishable key**, not the
+> signed-in user's JWT, so as far as Postgres is concerned it's an anonymous
+> caller. RLS on the CRM tables therefore **cannot be tightened until
+> `crm.html` sends the user's token** — doing one without the other either
+> breaks the CRM or leaves the data open. Branch: `fix/crm-anon-lockdown`.
+> `is_desk_user()` covers every current CRM user, so it's the right gate.
+
+Before changing those policies, confirm with Dinuka which external systems
+write to those tables — an INSERT policy tightened blindly will silently break
+whatever was feeding them.
+
 ## Known issues (all on Trello, Backlog)
 
 Issues 1–4 and 6–9 were also confirmed present in the **live** code on 2026-09-15.
@@ -193,4 +238,7 @@ Also on the board:
 
 - Don't commit or push unless asked. **Never push or merge to `master` without explicit approval: it deploys to production.** Rename to `main` is planned.
 - Don't touch production data or settings without an explicit go-ahead and a card.
+- **Never copy production data into non-prod**, and never let a non-prod environment reach the production messaging config — Resend/Twilio fire from Postgres triggers, so it would text real customers.
+- **Credentials live only in `~/.config/dhf-desk/env`.** Never in the repo, never in a branch.
+- **Report what was actually done.** If a check was skipped, say so; if something failed, paste the output. Several claims in this engagement were wrong and had to be corrected publicly (a PR called "safe to merge" that would have published internal docs; a Netlify Pretty-URLs rewrite mistaken for a rogue deploy; advice to upgrade Supabase for backups when the org was already on Pro). Verify before asserting.
 - Keep this file up to date when decisions change.

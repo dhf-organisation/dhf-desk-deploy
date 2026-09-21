@@ -1,0 +1,52 @@
+name: Task or change
+description: A piece of work to do — a feature, an improvement, a chore
+labels: [task]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Planning and priority live on the **Trello board (DHF Desk)**. Use a
+        GitHub issue when the work is concrete enough to become a branch and a
+        PR, and link the two together — see
+        [CONTRIBUTING.md](../blob/master/CONTRIBUTING.md).
+
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: What should be true when this is done?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why now? What prompted it? Anything already ruled out?
+
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of done
+      description: The checks someone else could run to agree it's finished.
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+
+  - type: input
+    id: trello
+    attributes:
+      label: Trello card
+      placeholder: https://trello.com/c/...
+
+  - type: checkboxes
+    id: touches
+    attributes:
+      label: Does this touch any of these?
+      options:
+        - label: Database schema or RLS policies
+        - label: Authentication or who can see what
+        - label: The deploy pipeline or `netlify.toml`
+        - label: A new file that needs adding to the publish list

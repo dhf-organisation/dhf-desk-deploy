@@ -1,0 +1,19 @@
+version: 2
+
+# The app itself has no package manager — every library is a <script> tag from
+# a CDN, so Dependabot can't see them (see docs/security.md, "Third-party
+# scripts"). What it can watch is the GitHub Actions we pin by SHA, which
+# otherwise silently go stale.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Australia/Melbourne
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+    labels:
+      - dependencies

@@ -1,0 +1,13 @@
+# Every PR gets a review request. Both owners can approve anything; this is
+# about making sure neither of us lands a change on master that the other
+# never saw, not about gatekeeping.
+*                       @LahiruWijesuriya @dinuka-dhf
+
+# Deploy plumbing, CI and database migrations decide whether production stays
+# up and whether customer data stays private — these always want a second set
+# of eyes.
+/netlify.toml           @LahiruWijesuriya @dinuka-dhf
+/_headers               @LahiruWijesuriya @dinuka-dhf
+/.github/               @LahiruWijesuriya @dinuka-dhf
+/scripts/               @LahiruWijesuriya @dinuka-dhf
+/supabase/              @LahiruWijesuriya @dinuka-dhf

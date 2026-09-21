@@ -1,0 +1,31 @@
+name: Post-deploy smoke
+
+# Netlify publishes master automatically. This runs straight after a push to
+# master, waits for the new deploy to be live, then checks production is
+# actually serving the app — and that the publish allowlist still holds, so a
+# repeat of "the whole site 404s" (8 September 2026) is caught in minutes
+# rather than by a phone call from the workshop.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+
+      - name: Wait for the Netlify deploy to publish
+        run: sleep 90
+
+      - name: Smoke test production
+        run: node scripts/smoke.mjs https://dhf-desk.netlify.app

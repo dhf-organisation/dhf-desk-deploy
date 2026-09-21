@@ -1,0 +1,73 @@
+name: CI
+
+# Runs on every pull request, and on master so the branch always has a
+# known-good status. Deliberately dependency-free: the app has no build step
+# and no package.json, so these checks use only Node's standard library and
+# actions pinned to a commit SHA.
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Syntax, build and publish list
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+
+      - name: JavaScript syntax check
+        run: |
+          set -e
+          for f in app.js scripts/*.mjs; do
+            [ -e "$f" ] || continue
+            echo "checking $f"
+            node --check "$f"
+          done
+          if [ -f config.js ]; then node --check config.js; fi
+
+      - name: Inline script syntax check (HTML pages)
+        run: node scripts/check-inline-scripts.mjs
+
+      - name: Publish allowlist is complete
+        run: node scripts/check-publish-list.mjs
+
+      - name: Netlify build produces the expected files
+        run: |
+          set -e
+          CMD=$(grep '^  command' netlify.toml | sed 's/^  command = "\(.*\)"$/\1/')
+          echo "build command: $CMD"
+          sh -c "$CMD"
+          echo "--- dist/ contents"
+          ls -la dist
+          test -f dist/index.html
+          test -f dist/app.js
+          test -f dist/_headers
+          test ! -f dist/deploy.sh || (echo "deploy.sh must not be published" && exit 1)
+          test ! -f dist/CLAUDE.md || (echo "CLAUDE.md must not be published" && exit 1)
+
+  sql:
+    name: SQL migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+
+      - name: Migration naming and safety review
+        run: node scripts/check-migrations.mjs

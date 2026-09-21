@@ -1,0 +1,74 @@
+name: Bug report
+description: Something in DHF Desk is broken or behaving wrongly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this is a **security problem** (customer data visible to the wrong
+        person, a leaked key, a way in without signing in) please don't file it
+        here — see [SECURITY.md](../blob/master/SECURITY.md).
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it happen?
+      options:
+        - CRM (crm.html)
+        - Staff portal (staff.html)
+        - Customer portal (portal.html)
+        - Public site (index.html / app.js)
+        - Deploy / hosting
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: What did you see? Paste the exact error text if there is one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Sign in to the CRM as ...
+        2. Open the Leads tab
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: who
+    attributes:
+      label: Who is affected
+      description: One person, everyone at the counter, customers? Roughly how often?
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: How bad is it right now?
+      options:
+        - Blocking — the workshop can't do its job
+        - Painful — there's a workaround but it's costing time
+        - Annoying — worth fixing, not urgent
+    validations:
+      required: true
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Browser console output
+      description: Right-click → Inspect → Console. Optional, but it usually saves an hour.
+      render: text
