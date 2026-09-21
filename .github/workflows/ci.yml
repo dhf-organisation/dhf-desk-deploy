@@ -45,6 +45,9 @@ jobs:
       - name: Publish allowlist is complete
         run: node scripts/check-publish-list.mjs
 
+      - name: External scripts are pinned and hashed
+        run: node scripts/check-external-scripts.mjs
+
       - name: Netlify build produces the expected files
         run: |
           set -e
