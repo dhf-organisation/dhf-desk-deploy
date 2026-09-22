@@ -96,7 +96,31 @@ needs them even for anonymous/public image pulls.
 
 ## What we're building towards
 
-Four environments, one non-production database.
+**Three tiers, one non-production database — not the four you might expect
+(Dev / Staging / UAT / Prod).** Worth stating why directly, since it's a
+deliberate call, not a gap:
+
+- **"Dev" is Local.** A hosted, shared "dev" database earns its cost when
+  multiple developers need to see each other's in-progress work without
+  going through git — a shared integration point. With one active developer
+  and Dinuka occasionally pushing directly rather than branching, that
+  problem doesn't exist yet, and Local (free, already built, isolated per
+  machine) does everything a hosted dev tier would, at zero cost and zero
+  drift risk.
+- **Staging and UAT are one tier**, for the same reason: no second audience
+  yet that needs to see different data than the first.
+- **Standard practice, not a shortcut.** The number of environments should
+  match real coordination needs, not a template — adding a tier "because
+  that's what a mature setup looks like" is the well-known failure mode
+  (environment sprawl: more places for config to drift, more credentials to
+  rotate, more things that can silently diverge from what actually ships).
+  Three tiers is the right number for this team's size right now, not a
+  reduced version of four.
+- **The trigger to add a fourth is concrete, not a feeling:** a second
+  developer working in parallel who needs a shared environment beyond git
+  branches, or a genuinely separate audience for UAT that isn't Dinuka. Until
+  one of those is real, a fourth tier is cost and drift with no offsetting
+  benefit.
 
 ### Local
 
@@ -170,6 +194,18 @@ don't look DHF-related. This looks like a shared billing org, not one
 scoped to DHF Desk. Worth confirming with Dinuka rather than assuming; it
 affects who else's usage shows up on the same bill.
 
+0. **Already done, free, zero risk — `staging` and `production` GitHub
+   Environments** exist on the repo (Settings → Environments).
+   `production` requires one of Lahiru/Dinuka to approve before a job runs
+   against it; `staging` has no gate. **Currently inert** — nothing in this
+   repo's CI triggers a GitHub Actions *deployment* yet, and Netlify
+   auto-publishes `master` through its own GitHub App integration, which
+   doesn't go through GitHub Environments at all. So this adds no friction
+   today; it's scaffolding for the day a workflow (e.g. an automated
+   staging-schema-push, or a gated production release job) needs somewhere
+   to hold its approval and secrets. Confirmed free on this repo's plan:
+   environment protection rules are a public-repo feature on GitHub Free,
+   not a paid one.
 1. **Create the project** (Management API, `POST /v1/projects` — org
    `fhyhrpvrmpmnzbrypows`, region `ap-south-1` to match production, a freshly
    generated DB password). Save that password somewhere real — unlike

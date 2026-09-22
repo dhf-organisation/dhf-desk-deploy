@@ -167,7 +167,9 @@ Google sign-in only works if `http://localhost:8080` is an authorised origin on 
 - **Staging/UAT**: one hosted non-prod: its own Supabase project + Netlify deploy of `main`
 - **Production**: tagged, approved releases only
 
-No separate hosted dev, and staging and UAT are combined: one developer, and each extra project adds cost and config drift.
+No separate hosted dev, and staging and UAT are combined: one developer, and each extra project adds cost and config drift. Reasoning written out in full in docs/environments.md ("What we're building towards") since Dinuka asked directly why there's no separate dev tier.
+
+**Status (2026-09-22):** Local — done, verified end to end (PRs #24/#25). Staging — everything short of creating the Supabase project is built (PR #26): schema-push script, Netlify config documented (not yet merged — would break previews before the env vars exist), `staging`/`production` GitHub Environments created (currently inert — nothing routes through them yet). **Blocked on a ~$10/month approval**, asked of the user directly and deferred pending Dinuka's input on the org's billing (see below).
 
 **Flow:** feature branch → PR (CI + preview) → merge to `main` (auto-deploy staging: migrations → front-end → smoke) → tag `vX.Y.Z` → required approval → prod (backup check → migrations → deploy → smoke).
 
