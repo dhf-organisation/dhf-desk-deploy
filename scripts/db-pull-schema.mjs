@@ -67,6 +67,13 @@ const Q_SCHEMAS_EXIST = `
   select nspname from pg_namespace where nspname = 'public';
 `;
 
+const Q_SEQUENCES = `
+  select sequencename as name, start_value, increment_by, min_value, max_value, cycle
+  from pg_sequences
+  where schemaname = 'public'
+  order by sequencename;
+`;
+
 const Q_ENUMS = `
   select t.typname as name,
          string_agg(quote_literal(e.enumlabel), ', ' order by e.enumsortorder) as labels
@@ -168,12 +175,21 @@ function buildTableSql(tableName, columns, constraints) {
     if (c.column_default !== null) line += ` DEFAULT ${c.column_default}`;
     return line;
   });
-  const pk = constraints.filter((c) => c.contype === 'p').map((c) => `  CONSTRAINT "${c.conname}" ${c.def}`);
-  const other = constraints
-    .filter((c) => c.contype !== 'p')
-    .map((c) => `  CONSTRAINT "${c.conname}" ${c.def}`);
-  const lines = [...colLines, ...pk, ...other];
+  // Foreign keys are deliberately NOT inlined here — see buildForeignKeySql.
+  // Tables are created in one alphabetical pass (simplest, and matches how
+  // the queries below are ordered), so an inline FK referencing a table that
+  // sorts later would fail with "relation does not exist". pg_dump avoids
+  // exactly this by adding FKs in a separate pass after every table exists;
+  // doing the same here rather than hand-rolling a topological sort.
+  const inlineable = constraints.filter((c) => c.contype !== 'f');
+  const lines = [...colLines, ...inlineable.map((c) => `  CONSTRAINT "${c.conname}" ${c.def}`)];
   return `CREATE TABLE IF NOT EXISTS "public"."${tableName}" (\n${lines.join(',\n')}\n);`;
+}
+
+function buildForeignKeySql(tableName, constraints) {
+  return constraints
+    .filter((c) => c.contype === 'f')
+    .map((c) => `ALTER TABLE "public"."${tableName}" ADD CONSTRAINT "${c.conname}" ${c.def};`);
 }
 
 function quoteLiteralList(rolesArray) {
@@ -190,8 +206,9 @@ async function main() {
   const exists = await runSql(token, Q_SCHEMAS_EXIST);
   if (!exists.length) throw new Error('public schema not found — unexpected, stopping.');
 
-  const [enums, tables, columns, constraints, indexes, rlsFlags, policies, functions, triggers] =
+  const [sequences, enums, tables, columns, constraints, indexes, rlsFlags, policies, functions, triggers] =
     await Promise.all([
+      runSql(token, Q_SEQUENCES),
       runSql(token, Q_ENUMS),
       runSql(token, Q_TABLES),
       runSql(token, Q_COLUMNS),
@@ -217,6 +234,24 @@ async function main() {
     ''
   );
 
+  if (sequences.length) {
+    // Standalone sequences (bill/invoice/PO numbering etc.) need to exist
+    // BEFORE the tables — a column default like nextval('x_seq'::regclass)
+    // fails at table-creation time otherwise, not at insert time. SERIAL/
+    // IDENTITY columns create their own sequence implicitly and don't show
+    // up here (pg_sequences lists every sequence either way, so this only
+    // matters for ones a table default explicitly calls by name).
+    out.push('-- ── Sequences ─────────────────────────────────────────────');
+    for (const s of sequences) {
+      out.push(
+        `CREATE SEQUENCE IF NOT EXISTS "public"."${s.name}" ` +
+        `START WITH ${s.start_value} INCREMENT BY ${s.increment_by} ` +
+        `MINVALUE ${s.min_value} MAXVALUE ${s.max_value}${s.cycle ? ' CYCLE' : ' NO CYCLE'};`
+      );
+    }
+    out.push('');
+  }
+
   if (enums.length) {
     out.push('-- ── Enums ──────────────────────────────────────────────');
     for (const e of enums) out.push(`CREATE TYPE "public"."${e.name}" AS ENUM (${e.labels});`);
@@ -230,6 +265,13 @@ async function main() {
     out.push(buildTableSql(t.table_name, cols, byTableCons[t.table_name] || []));
   }
   out.push('');
+
+  const fkStatements = tables.flatMap((t) => buildForeignKeySql(t.table_name, byTableCons[t.table_name] || []));
+  if (fkStatements.length) {
+    out.push('-- ── Foreign keys (added after every table exists) ────────');
+    out.push(...fkStatements);
+    out.push('');
+  }
 
   if (indexes.length) {
     out.push('-- ── Indexes (non-constraint-backed) ──────────────────────');
@@ -278,7 +320,7 @@ async function main() {
 
   console.log(`Wrote ${OUT_PATH}`);
   console.log(
-    `  ${tables.length} tables, ${enums.length} enums, ${functions.length} functions, ` +
+    `  ${tables.length} tables, ${sequences.length} sequences, ${enums.length} enums, ${functions.length} functions, ` +
     `${triggers.length} triggers, ${policies.length} policies, ${rlsOn.length} tables with RLS on`
   );
   console.log('\nThis file is git-ignored — it must never be committed. Confirming:');

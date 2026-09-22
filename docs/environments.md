@@ -75,6 +75,25 @@ Either way, `docker info` succeeding is the thing that matters — the Supabase
 CLI just needs a reachable Docker socket, it doesn't care which runtime is
 behind it.
 
+**macOS gotcha, hit while building this:** installing Docker Desktop by
+dragging the `.dmg` to Applications (rather than through `brew install --cask
+docker`, which needs a `sudo` prompt of its own) skips the step that symlinks
+`docker` and the credential helpers into `/usr/local/bin`. The daemon can be
+fully up and `docker info` still says `command not found: docker` — it's a
+PATH problem, not a Docker problem. Fix, no `sudo` needed:
+
+```bash
+mkdir -p ~/.local/bin
+for f in docker docker-credential-desktop docker-credential-osxkeychain; do
+  ln -sf "/Applications/Docker.app/Contents/Resources/bin/$f" ~/.local/bin/"$f"
+done
+```
+
+(and make sure `~/.local/bin` is on `PATH`). Skip the credential helpers and
+`supabase start` pulls images fine but fails immediately after with
+`docker-credential-desktop: executable file not found in $PATH` — the daemon
+needs them even for anonymous/public image pulls.
+
 ## What we're building towards
 
 Four environments, one non-production database.
@@ -93,14 +112,24 @@ about what "pulled from production" means here: `db-pull-schema.mjs` pulls
 database — never a row of actual data. Nothing a real customer typed reaches
 a developer's machine through this path.
 
-**Still missing:** messaging providers aren't deliberately stubbed yet. In
-practice a trigger that fires locally has nothing to send with — the schema
-pull brings over table/column/policy/function *definitions* only, never row
-data, so whatever `desk_settings` or similar holds the Resend/Twilio keys
-starts out empty on a fresh local database. That's incidental safety from the
-schema-only design, not something verified end to end — don't rely on it.
-Deliberately stubbing the messaging RPCs is still worth doing before this
-local stack sees heavier use.
+**Messaging is safe by design, not by luck — checked, not assumed.** Read the
+pulled function bodies rather than guessing: `desk_send_email`/`desk_send_sms`
+(and the triggers that call them — booking confirmations, day-before
+reminders) look up their Resend/Twilio credentials from **Supabase Vault**
+(`vault.decrypted_secrets`) at call time, and fail closed with "not
+configured" if the lookup comes back empty. The schema pull never brings over
+row data — vault entries included — so a fresh local database's vault has
+nothing in it, and every messaging call simply has nothing to send with.
+
+`db-local-up.mjs` runs `db-check-messaging-safe.mjs` automatically after
+every start: it reads the actual secret names the pulled functions look up
+(not a hard-coded list) and checks the local vault for each. Finds one →
+**stops there** with the exact `DELETE` to clean it up, rather than handing
+back a "ready to use, actually dangerous" stack. There's a documented,
+deliberate override (`ALLOW_LOCAL_MESSAGING=1`) for the day someone genuinely
+wants to test messaging against a sandbox provider account — it has to be
+typed out in full each time, not left as a flag that lingers in a script
+someone reuses without reading it.
 
 ### Preview — one per pull request
 
