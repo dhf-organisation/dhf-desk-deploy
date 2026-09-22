@@ -76,25 +76,35 @@ async function main() {
   ]);
   console.log(`  ${vehicles.length} desk_vehicles`);
 
+  // desk_jobs.status has a CHECK constraint — confirmed against the real
+  // pulled schema, not guessed: 'booking' | 'in_progress' | 'on_hold' |
+  // 'finished'. Got this wrong on the first pass ('Booked'/'In Progress'),
+  // caught it by actually running this against the local stack rather than
+  // trusting it would work.
   const jobs = await sb(url, key, 'desk_jobs', [
     {
       customer_id: customers[0].id, vehicle_id: vehicles[0].id,
-      job_type: 'Tyre Fitment', status: 'Booked',
+      job_type: 'Tyre Fitment', status: 'booking',
       booked_at: new Date(Date.now() + 86400000).toISOString(),
       created_by: 'seed-script',
     },
     {
       customer_id: customers[1].id, vehicle_id: vehicles[1].id,
-      job_type: 'Roadworthy', status: 'In Progress',
+      job_type: 'Roadworthy', status: 'in_progress',
       booked_at: new Date().toISOString(),
       created_by: 'seed-script',
     },
   ]);
   console.log(`  ${jobs.length} desk_jobs`);
 
+  // PostgREST requires every object in a batch insert to have the exact
+  // same set of keys — it builds one INSERT with a fixed column list from
+  // the first row, and 400s ("All object keys must match") on a mismatch.
+  // Learned by hitting it: the second row here was missing `email` entirely
+  // rather than setting it null, which is enough to trigger this.
   const leads = await sb(url, key, 'leads', [
     { name: 'Test Lead — Priya Nair', phone: '0400 000 010', email: 'priya.test@example.invalid', enquiry: 'Tyre price enquiry (synthetic seed row)', source: 'seed-script' },
-    { name: 'Test Lead — Marco Rossi', phone: '0400 000 011', enquiry: 'Fleet quote request (synthetic seed row)', source: 'seed-script' },
+    { name: 'Test Lead — Marco Rossi', phone: '0400 000 011', email: null, enquiry: 'Fleet quote request (synthetic seed row)', source: 'seed-script' },
   ]);
   console.log(`  ${leads.length} leads`);
 

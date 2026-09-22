@@ -75,6 +75,25 @@ Either way, `docker info` succeeding is the thing that matters — the Supabase
 CLI just needs a reachable Docker socket, it doesn't care which runtime is
 behind it.
 
+**macOS gotcha, hit while building this:** installing Docker Desktop by
+dragging the `.dmg` to Applications (rather than through `brew install --cask
+docker`, which needs a `sudo` prompt of its own) skips the step that symlinks
+`docker` and the credential helpers into `/usr/local/bin`. The daemon can be
+fully up and `docker info` still says `command not found: docker` — it's a
+PATH problem, not a Docker problem. Fix, no `sudo` needed:
+
+```bash
+mkdir -p ~/.local/bin
+for f in docker docker-credential-desktop docker-credential-osxkeychain; do
+  ln -sf "/Applications/Docker.app/Contents/Resources/bin/$f" ~/.local/bin/"$f"
+done
+```
+
+(and make sure `~/.local/bin` is on `PATH`). Skip the credential helpers and
+`supabase start` pulls images fine but fails immediately after with
+`docker-credential-desktop: executable file not found in $PATH` — the daemon
+needs them even for anonymous/public image pulls.
+
 ## What we're building towards
 
 Four environments, one non-production database.
