@@ -3,3 +3,10 @@ node_modules/
 .DS_Store
 *.log
 dist/
+
+# Local Supabase dev stack — schema and dumps pulled from production must
+# never be committed (RLS policies + function bodies stay out of this public
+# repo until #6 — public/private decision — is resolved). See
+# scripts/db-pull-schema.mjs and docs/environments.md.
+supabase/.local-schema.sql
+supabase/.env

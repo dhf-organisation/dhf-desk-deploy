@@ -2,21 +2,78 @@
 
 ## Where we are today
 
-Honestly: **there is one environment, and it's production.**
-
 | | Front end | Database | Notes |
 |---|---|---|---|
-| Local | `python3 -m http.server 8080` | **Production** | Every write is real |
+| Local (static server) | `python3 -m http.server 8080` | **Production** | Every write is real — the original, still-simplest way to look at the app |
+| Local (Supabase stack) | same static server | **Local, throwaway** | See below — real writes, but to a database nobody else can see, seeded with fake data |
 | PR preview | Netlify deploy preview | **Production** | Public URL, real data |
 | Production | https://dhf-desk.netlify.app | Production | Auto-published from `master` |
 
-A local run and a pull request preview both talk to the live database. There
-is no staging. There is no seed data. The app can send real email and SMS from
-any of them, because the messaging automation lives in Postgres triggers rather
-than in the page.
+There is still no staging, and PR previews still hit the live database — that
+part of "there is one environment, and it's production" hasn't changed yet.
+**Treat previews as read-only.**
 
-So, until that changes: **treat local and preview as read-only**. Look at
-things; don't create test jobs, don't send messages, don't delete anything.
+Local development no longer has to be one of those two things, though — see
+below.
+
+## Local — a real throwaway database, available now
+
+```bash
+node scripts/db-pull-schema.mjs   # pulls today's schema from prod, read-only
+node scripts/db-local-up.mjs      # starts Postgres/Auth/PostgREST in Docker, applies it
+node scripts/db-seed-synthetic.mjs # adds a handful of obviously-fake rows
+```
+
+What this actually is: the Supabase CLI running Postgres (and Auth, and
+PostgREST) in Docker on your machine. Nothing here reaches production except
+the first command, which only ever runs read-only introspection queries —
+`SELECT`s against Postgres's own catalog, nothing that can modify anything.
+
+**Why "pull the schema" instead of committing migrations,** which is the
+usual Supabase-CLI-tutorial way to do this: `supabase/migrations/` can't be
+committed to this public repo yet — see #6. `db-pull-schema.mjs` reconstructs
+real DDL (tables, RLS policies, functions, triggers) from the live catalog via
+the Management API, using a personal access token rather than the database
+password (which was never recovered), and writes it to
+`supabase/.local-schema.sql` — **git-ignored, never committed**. When #6
+resolves, promoting that file's contents into `supabase/migrations/` is a
+small, deliberate follow-up, not a redo of this work.
+
+Each developer runs the pull themselves, whenever they want current schema —
+it's not shared or synced between machines, by design.
+
+**Container runtime:** the CLI needs a working Docker daemon. Docker Desktop
+on macOS, or native Docker Engine on Linux — see
+[Docker setup](#docker-setup-mac-vs-linux) below. Both speak the same Docker
+API, so the rest of the flow is identical either way.
+
+**Seed data** (`db-seed-synthetic.mjs`) is a starting set — a few customers,
+vehicles, jobs, and CRM leads — not exhaustive coverage of every table. It
+refuses to run against anything but `localhost`/`127.0.0.1`, checked in code,
+not by convention. Extend it as more of the app gets exercised locally.
+
+**What this doesn't cover yet:** signing in. Staff auth is Google Identity
+Services against a real Google OAuth client, and the portal is a real Supabase
+email OTP — neither has a local/fake equivalent configured yet. Today the
+local stack is for looking at data and exercising anything that doesn't need
+a session. Wiring up local-only test logins is tracked as part of P2 (staging
+auth).
+
+### Docker setup: Mac vs Linux
+
+No single app runs on both, so the team standard is "Docker itself, via
+whichever official path fits your OS" rather than one specific tool:
+
+- **macOS:** [Docker Desktop](https://docker.com/products/docker-desktop) —
+  the officially-documented Supabase CLI target, most-tested path.
+- **Linux:** native
+  [Docker Engine](https://docs.docker.com/engine/install/) — no Desktop
+  wrapper needed; Linux runs containers natively, so this is actually the
+  lighter install of the two.
+
+Either way, `docker info` succeeding is the thing that matters — the Supabase
+CLI just needs a reachable Docker socket, it doesn't care which runtime is
+behind it.
 
 ## What we're building towards
 
@@ -24,12 +81,26 @@ Four environments, one non-production database.
 
 ### Local
 
-Supabase CLI running Postgres in Docker, with migrations applied from
-`supabase/migrations/` and a synthetic seed. No production data, ever — not a
-subset, not "just the customers", not anonymised. Real customer records don't
-leave production.
+**Mostly here** — see [Local — a real throwaway database, available now](#local--a-real-throwaway-database-available-now)
+above. Supabase CLI running Postgres in Docker; schema pulled from production
+read-only rather than from committed migrations, until #6 resolves; a small
+synthetic seed.
 
-Messaging providers stubbed, so a stray trigger can't text anyone.
+**No production data, ever** — not a subset, not "just the customers", not
+anonymised. Real customer records don't leave production. Worth being precise
+about what "pulled from production" means here: `db-pull-schema.mjs` pulls
+**schema only** — table/column/policy/function *definitions*, the shape of the
+database — never a row of actual data. Nothing a real customer typed reaches
+a developer's machine through this path.
+
+**Still missing:** messaging providers aren't deliberately stubbed yet. In
+practice a trigger that fires locally has nothing to send with — the schema
+pull brings over table/column/policy/function *definitions* only, never row
+data, so whatever `desk_settings` or similar holds the Resend/Twilio keys
+starts out empty on a fresh local database. That's incidental safety from the
+schema-only design, not something verified end to end — don't rely on it.
+Deliberately stubbing the messaging RPCs is still worth doing before this
+local stack sees heavier use.
 
 ### Preview — one per pull request
 
@@ -64,15 +135,17 @@ the front end, then a smoke test. A backup verified before any migration runs.
 
 Rough order, because each step depends on the one before:
 
-1. **Baseline the production schema** into `supabase/migrations/`. Nothing
-   else is possible while the schema exists only inside the live database.
-2. **Extract configuration** — Supabase URL and key, Google client ID, Maps
-   key, allowlist — into one `config.js` generated per environment. Currently
-   these are hard-coded across four pages, so "point at staging" means editing
-   four files.
-3. **Local Supabase stack** with a synthetic seed.
+1. ~~**Baseline the production schema** into `supabase/migrations/`.~~
+   **Blocked on #6** (public/private decision) — committing real RLS policy
+   text and function bodies to a public repo isn't something to do casually.
+   Worked around for now: `scripts/db-pull-schema.mjs` reconstructs it into a
+   git-ignored local file instead, so local dev didn't have to wait.
+2. ✅ **Extract configuration** — done (`config.js` + `scripts/build-config.mjs`).
+3. ✅ **Local Supabase stack** with a synthetic seed — done, see above. Signing
+   in locally (staff Google auth, portal OTP) is still open.
 4. **Staging Supabase project** — schema from migrations, seed data, its own
-   auth and sandboxed messaging.
+   auth and sandboxed messaging. Still blocked on #1 above for a *committed*
+   baseline, though nothing stops standing up the project itself first.
 5. **Point previews at staging.**
 6. **Add the release gate** in front of production.
 

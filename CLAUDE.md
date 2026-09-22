@@ -133,17 +133,31 @@ Rough order in the file:
 - Office-only notes must never appear in anything customer-facing (print, email, portal).
 - `.claude/skills/invoice-template` is a generic Python skill that isn't used by this app.
 
-## Running locally (today)
+## Running locally
+
+**Against production (read-only, quickest):**
 
 ```bash
 python3 -m http.server 8080   # then open http://localhost:8080
 ```
 
-⚠️ **This talks to the PRODUCTION database.** Every write is real, and it can send real emails/SMS.
+⚠️ **This talks to the PRODUCTION database.** Every write is real, and it can send real emails/SMS. Treat as read-only.
+
+**Against a local Supabase stack (2026-09-22, mostly working):**
+
+```bash
+node scripts/db-pull-schema.mjs      # pulls schema from prod, read-only, into a git-ignored local file
+node scripts/db-local-up.mjs         # supabase start + applies the pulled schema
+node scripts/db-seed-synthetic.mjs   # a handful of fake customers/vehicles/jobs/leads
+```
+
+- Needs a Docker daemon. **No single app covers both of us** — Dinuka's on Linux, I'm on Mac — so the team standard is Docker Desktop (Mac) / native Docker Engine (Linux), written up in docs/environments.md.
+- `db-pull-schema.mjs` pulls **schema only** (tables/columns/RLS/functions), never row data, via the Management API (PAT, no DB password needed — same access pattern as everywhere else in this doc). Output is `supabase/.local-schema.sql`, **git-ignored**, regenerate any time. This is the workaround for #6 still being open: migrations can't be committed yet, so nothing here is committed either.
+- `check-inline-scripts.mjs` etc. don't need this — it's for exercising the app with a real (throwaway) database instead of eyeballing static HTML.
+- **Not yet wired up:** signing in. Staff Google auth and portal OTP have no local equivalent configured — this gets you a database to poke at, not a fully logged-in session, yet.
+- Messaging providers aren't deliberately stubbed. In practice nothing sends, because no row data (so no API keys) exists on a fresh local database — that's incidental, not verified safety. Don't rely on it once seed data grows.
 
 Google sign-in only works if `http://localhost:8080` is an authorised origin on the OAuth client. The Maps key may be referrer-restricted. `_headers` (the CSP) only applies on Netlify.
-
-Treat local runs as read-only until the P1 local Supabase stack exists.
 
 ## DevOps plan (decided direction, pending Dinuka's sign-off)
 
