@@ -3529,7 +3529,7 @@ async function doMove(lead,from,to){
 
   // Auto-add to the calling list when a lead enters a follow-up stage; remove when it's won/closed/lost
   if(isFollowUpStage(to)) ensureInCallList(updatedLead);
-  else if(to==='Won' || to==='Closed' || to==='Not Ready to Buy') removeFromCallList(lead.id);
+  else if(to==='Won' || to==='Closed' || to==='Not Ready to Buy') removeLeadFromCallList(lead.id);
 
   // When moving to Won, prompt for job details to add to projection
   if(to==='Won'){
@@ -4460,7 +4460,7 @@ async function ensureInCallList(lead){
   } catch(e){ console.error('auto-add to call list failed', e); }
 }
 
-async function removeFromCallList(leadId){
+async function removeLeadFromCallList(leadId){
   // Soft-remove a lead from the calling list (e.g. when it's Won/Closed).
   const item = CALL_LIST.find(c => c.lead_id === leadId);
   if(!item) return;
@@ -5004,6 +5004,8 @@ async function closeFU2Lead(itemId, name, result){
       }
       if(!DATA[targetStage]) DATA[targetStage] = [];
       DATA[targetStage].unshift({...lead, stage: targetStage});
+
+      removeLeadFromCallList(lead.id); // drop from calling list once Won/Lost
 
       render(); // re-render Kanban
       showToast(result==='won' ? '🎉 ' + name + ' moved to Won!' : name + ' moved to Closed');
