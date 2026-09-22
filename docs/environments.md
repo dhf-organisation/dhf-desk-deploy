@@ -96,7 +96,31 @@ needs them even for anonymous/public image pulls.
 
 ## What we're building towards
 
-Four environments, one non-production database.
+**Three tiers, one non-production database — not the four you might expect
+(Dev / Staging / UAT / Prod).** Worth stating why directly, since it's a
+deliberate call, not a gap:
+
+- **"Dev" is Local.** A hosted, shared "dev" database earns its cost when
+  multiple developers need to see each other's in-progress work without
+  going through git — a shared integration point. With one active developer
+  and Dinuka occasionally pushing directly rather than branching, that
+  problem doesn't exist yet, and Local (free, already built, isolated per
+  machine) does everything a hosted dev tier would, at zero cost and zero
+  drift risk.
+- **Staging and UAT are one tier**, for the same reason: no second audience
+  yet that needs to see different data than the first.
+- **Standard practice, not a shortcut.** The number of environments should
+  match real coordination needs, not a template — adding a tier "because
+  that's what a mature setup looks like" is the well-known failure mode
+  (environment sprawl: more places for config to drift, more credentials to
+  rotate, more things that can silently diverge from what actually ships).
+  Three tiers is the right number for this team's size right now, not a
+  reduced version of four.
+- **The trigger to add a fourth is concrete, not a feeling:** a second
+  developer working in parallel who needs a shared environment beyond git
+  branches, or a genuinely separate audience for UAT that isn't Dinuka. Until
+  one of those is real, a fourth tier is cost and drift with no offsetting
+  benefit.
 
 ### Local
 
@@ -154,6 +178,74 @@ Staging gets its own Supabase project, its own Google OAuth origins, its own
 OTP mail sender, and **sandboxed messaging providers**. That last one isn't
 optional: the day-before reminder job will happily send to whatever phone
 numbers it finds.
+
+#### Ready-to-execute runbook (2026-09-22)
+
+Blocked on one thing only: creating the Supabase project is a real ~$10/month
+charge on the DHF org's Supabase billing (Pro plan, additional-project
+pricing — confirmed against current Supabase pricing, not estimated), so it
+needs a one-time yes rather than being created unattended. Everything else
+below is ready.
+
+**Also worth knowing before starting:** the DHF org's Supabase account
+(`fhyhrpvrmpmnzbrypows`) already has 6 projects in it as of 2026-09-22, and
+several — "Vehicle Tracker", "Whatsapp Call logs", "Poker Room", "WORKFORCE" —
+don't look DHF-related. This looks like a shared billing org, not one
+scoped to DHF Desk. Worth confirming with Dinuka rather than assuming; it
+affects who else's usage shows up on the same bill.
+
+0. **Already done, free, zero risk — `staging` and `production` GitHub
+   Environments** exist on the repo (Settings → Environments).
+   `production` requires one of Lahiru/Dinuka to approve before a job runs
+   against it; `staging` has no gate. **Currently inert** — nothing in this
+   repo's CI triggers a GitHub Actions *deployment* yet, and Netlify
+   auto-publishes `master` through its own GitHub App integration, which
+   doesn't go through GitHub Environments at all. So this adds no friction
+   today; it's scaffolding for the day a workflow (e.g. an automated
+   staging-schema-push, or a gated production release job) needs somewhere
+   to hold its approval and secrets. Confirmed free on this repo's plan:
+   environment protection rules are a public-repo feature on GitHub Free,
+   not a paid one.
+1. **Create the project** (Management API, `POST /v1/projects` — org
+   `fhyhrpvrmpmnzbrypows`, region `ap-south-1` to match production, a freshly
+   generated DB password). Save that password somewhere real — unlike
+   production's, there's no excuse to lose this one.
+2. **Apply the schema:**
+   ```bash
+   node scripts/db-pull-schema.mjs
+   node scripts/db-push-schema-to-remote.mjs <staging-project-ref> <staging-db-password>
+   ```
+   `db-push-schema-to-remote.mjs` is new, written 2026-09-22, and reuses the
+   `supabase link` + `db push` mechanism rather than inventing something
+   untested — but **it has not itself been run against a real hosted
+   project**, only syntax-checked, because no staging project has existed
+   yet to test it against. Treat the first real run as a first real run, not
+   a formality.
+3. **Get the staging project's URL and anon key** from its dashboard (Project
+   Settings → API), for the next step.
+4. **Netlify:** add environment variables scoped to the **Deploy Previews**
+   context — `DHF_ENV=staging`, `DHF_SUPABASE_URL`, `DHF_SUPABASE_KEY`,
+   `DHF_GOOGLE_CLIENT_ID` (see the sign-in gap below). Then add this to
+   `netlify.toml`:
+   ```toml
+   [context.deploy-preview.environment]
+     DHF_ENV = "staging"
+   ```
+   **Do not merge that snippet before the Netlify env vars exist** —
+   `build-config.mjs` fails the build on a missing `DHF_*` var by design (see
+   docs/security.md — fail closed, not fall back to production), so merging
+   it early breaks every open and future PR's deploy preview until the vars
+   are set. Land the Netlify env vars first, confirm one preview builds, then
+   merge the `netlify.toml` change.
+5. **Verify:** open any PR, check its deploy preview's `/config.js` reads
+   `env: 'staging'` and the staging Supabase URL, not production's.
+
+**Known gap this doesn't close:** staff sign-in. Google Identity Services
+needs an authorised OAuth origin per environment, and Google Cloud console
+access hasn't been granted yet (see CLAUDE.md, "Access we have today"). A PR
+preview under this plan gets a real staging database, but staff can't sign in
+to it until that access exists. Customer portal OTP has the same gap on the
+email side — no non-production sender configured yet.
 
 ### Production
 
