@@ -29,18 +29,36 @@ More detail: [docs/architecture.md](docs/architecture.md).
 
 ## Running it locally
 
+Two ways, depending on what you're doing.
+
+**Quickest — against production data (read-only):**
+
 ```bash
 python3 -m http.server 8080
 # then open http://localhost:8080
 ```
 
-> ⚠️ **A local run talks to the production database.** There is no local
-> Supabase stack yet, so every write is real and the app can send real emails
-> and text messages to real customers. Treat local runs as read-only until
-> that changes.
+> ⚠️ **This talks to the production database.** Every write is real and can
+> send real emails/SMS to real customers. Look, don't click "save" on
+> anything.
 
-Google sign-in works locally only if `http://localhost:8080` is an authorised
-origin on the OAuth client, and the `_headers` CSP applies on Netlify only.
+**A real local database, with fake data, that you can actually use:**
+
+```bash
+node scripts/db-pull-schema.mjs    # schema from prod, read-only, once
+node scripts/db-local-up.mjs       # Postgres/Auth/PostgREST in Docker
+node scripts/db-seed-synthetic.mjs # a few obviously-fake rows to work with
+python3 -m http.server 8080
+```
+
+Needs Docker running — see
+[docs/environments.md](docs/environments.md#docker-setup-mac-vs-linux) for
+the macOS/Linux setup. Details, including exactly what does and doesn't reach
+production, are there too.
+
+Either way: Google sign-in works locally only if `http://localhost:8080` is
+an authorised origin on the OAuth client, and the `_headers` CSP applies on
+Netlify only.
 
 ## Deploying
 
