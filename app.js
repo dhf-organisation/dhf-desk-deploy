@@ -2612,7 +2612,7 @@ function renderPaymentsList(){
     h+='<div class="list-card">';
     dayList.forEach(p=>{
       h+=`<div class="list-row" onclick="openInvoiceFromJob('${p.invoice_id}','${p.invoice?.doc_type||'invoice'}')">
-        <div class="list-row-name" style="flex:1">${docPrefix(p.invoice?.doc_type)}-${p.invoice?.invoice_no||''} · ${esc(p.invoice?.customer?.name||'Unknown')}</div>
+        <div class="list-row-name" style="flex:1">${docPrefix(p.invoice?.doc_type)}-${esc(p.invoice?.invoice_no||'')} · ${esc(p.invoice?.customer?.name||'Unknown')}</div>
         <span class="status-badge draft">${PAYMENT_METHOD_LABELS[p.method]}</span>
         <div class="list-row-sub" style="font-weight:700">$${Number(p.amount).toFixed(2)}</div>
       </div>`;
