@@ -64,10 +64,13 @@ console.log('Starting the local Supabase stack …');
 sh('supabase', ['start']);
 
 console.log('\nApplying the pulled schema to the local database …');
-// `supabase db execute` runs SQL against whichever Postgres `supabase start`
+// `supabase db query` runs SQL against whichever Postgres `supabase start`
 // just brought up — never production. `--local` makes that explicit rather
 // than relying on there being nothing else linked.
-sh('supabase', ['db', 'execute', '--local', '-f', SCHEMA_FILE]);
+sh('supabase', ['db', 'query', '--local', '-f', SCHEMA_FILE]);
+
+console.log('\nChecking nothing here can actually send a real message …');
+sh('node', ['scripts/db-check-messaging-safe.mjs']);
 
 console.log(
   '\nLocal stack is up.\n' +
