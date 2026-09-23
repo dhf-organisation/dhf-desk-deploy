@@ -104,10 +104,16 @@ p.muted{color:var(--text-muted);font-size:var(--text-sm)}
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0" integrity="sha384-JBR+x8blGwjDRO63aHCGiZMD4VNiTR4ZUGA+N6ZKLf3zNt1fK8IBpcgPaMrxqWBp" crossorigin="anonymous"></script>
 <script>
-// Environment config — see config.js. Fallbacks are the production values.
-const DHF_CFG=window.DHF_CONFIG||{};
-const SB_URL=DHF_CFG.supabaseUrl||'https://cztpumgrvhmcvvpqbfqo.supabase.co';
-const SB_KEY=DHF_CFG.supabaseKey||'sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub3';
+// Environment config — see config.js. No fallback to production values: a
+// page that can't load its config must refuse to run, not quietly connect
+// to the live database (see docs/security.md).
+const DHF_CFG=window.DHF_CONFIG;
+if(!DHF_CFG||!DHF_CFG.supabaseUrl||!DHF_CFG.supabaseKey){
+  document.body.innerHTML='<div style="padding:40px;font:16px system-ui;color:#b91c1c">Configuration failed to load — refusing to start rather than risk connecting to the wrong database. Refresh the page, or contact support if this persists.</div>';
+  throw new Error('DHF_CONFIG missing or incomplete — refusing to start');
+}
+const SB_URL=DHF_CFG.supabaseUrl;
+const SB_KEY=DHF_CFG.supabaseKey;
 const sb=supabase.createClient(SB_URL,SB_KEY);
 
 const STATUS_LABEL={booking:'Booked In',in_progress:'Being Worked On',on_hold:'On Hold',finished:'Ready for Pickup!'};

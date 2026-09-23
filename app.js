@@ -21,11 +21,16 @@ function toggleTheme(){
 
 // ── SUPABASE CLIENT & AUTH ──────────────────────────────────
 // Environment config comes from config.js, loaded before this file — see that
-// file for why none of it is secret. The fallbacks keep production working if
-// config.js ever fails to load; they are the production values.
-const DHF_CFG=window.DHF_CONFIG||{};
-const SB_URL=DHF_CFG.supabaseUrl||'https://cztpumgrvhmcvvpqbfqo.supabase.co';
-const SB_KEY=DHF_CFG.supabaseKey||'sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub3';
+// file for why none of it is secret. No fallback to production values here on
+// purpose: a page that can't load its config must refuse to run, not quietly
+// connect to the live database (see docs/security.md).
+const DHF_CFG=window.DHF_CONFIG;
+if(!DHF_CFG||!DHF_CFG.supabaseUrl||!DHF_CFG.supabaseKey){
+  document.body.innerHTML='<div style="padding:40px;font:16px system-ui;color:#b91c1c">Configuration failed to load — refusing to start rather than risk connecting to the wrong database. Refresh the page, or contact support if this persists.</div>';
+  throw new Error('DHF_CONFIG missing or incomplete — refusing to start');
+}
+const SB_URL=DHF_CFG.supabaseUrl;
+const SB_KEY=DHF_CFG.supabaseKey;
 // Public anon key — RLS (is_desk_user()/is_desk_admin() in the desk_* table
 // policies) is what actually protects data, keyed off the verified identity
 // in the Supabase Auth session below, exactly like the Hub and every other
@@ -33,8 +38,8 @@ const SB_KEY=DHF_CFG.supabaseKey||'sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub
 // its own.
 const sb=supabase.createClient(SB_URL,SB_KEY);
 
-const ALLOWED_DOMAIN=DHF_CFG.allowedDomain||'dhftyres.com.au';
-const ALLOWED_EMAILS=DHF_CFG.allowedEmails||['dushentissera@gmail.com'];
+const ALLOWED_DOMAIN=DHF_CFG.allowedDomain||'';
+const ALLOWED_EMAILS=DHF_CFG.allowedEmails||[];
 
 let currentUser=null;
 let currentView='diary';
