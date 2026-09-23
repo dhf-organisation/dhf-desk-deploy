@@ -3359,25 +3359,16 @@ async function saveReturnItems(invoiceId){
   }
   if(!toReturn.length){showToast('Enter a quantity for at least one item');return}
   try{
-    const {data:cnData,error:cnErr}=await sb.from('desk_credit_notes').insert({customer_id:inv.customer_id,vehicle_id:inv.vehicle_id||null,invoice_id:inv.id,reason:`Item return from INV-${inv.invoice_no}`}).select();
-    if(cnErr)throw cnErr;
-    const creditNoteId=cnData[0].id;
-    const creditNoteNo=cnData[0].credit_note_no;
-    for(const r of toReturn){
-      const {error:itemErr}=await sb.from('desk_credit_note_items').insert({credit_note_id:creditNoteId,description:r.item.description,qty:r.qty,unit_price:r.item.unit_price,stock_id:r.item.stock_id||null,return_condition:r.condition});
-      if(itemErr)throw itemErr;
-      if(r.item.stock_id&&r.condition){
-        const stock=stockItems.find(s=>s.id===r.item.stock_id);
-        if(stock){
-          const qtyBefore=Number(stock.qty_on_hand)||0;
-          const qtyAfter=r.condition==='resellable'?qtyBefore+r.qty:qtyBefore;
-          if(r.condition==='resellable'){
-            await sb.from('desk_stock').update({qty_on_hand:qtyAfter,updated_at:new Date().toISOString()}).eq('id',r.item.stock_id);
-          }
-          await sb.from('desk_stock_adjustments').insert({stock_id:r.item.stock_id,qty_before:qtyBefore,qty_after:qtyAfter,reason:r.condition==='resellable'?`Customer return — resellable (CN-${creditNoteNo})`:`Customer return — damaged/unsellable, not restocked (CN-${creditNoteNo})`});
-        }
-      }
-    }
+    const items=toReturn.map(r=>({description:r.item.description,qty:r.qty,unit_price:r.item.unit_price,stock_id:r.item.stock_id||null,condition:r.condition}));
+    // Credit note + items + stock adjustment all go through one Postgres
+    // function (desk_return_items) so a return is one transaction, and the
+    // resellable-item stock bump is a single atomic
+    // `qty_on_hand = qty_on_hand + n`, not a browser read-then-write. See
+    // the atomic-saves plan.
+    const {data:rpcData,error}=await sb.rpc('desk_return_items',{p_invoice_id:invoiceId,p_items:items});
+    if(error)throw error;
+    const creditNoteId=rpcData.credit_note_id;
+    if(toReturn.some(r=>r.item.stock_id&&r.condition))await loadStockItems();
     closeModal();
     showToast('Credit note created from return');
     activateNavView('invoices');
