@@ -1555,31 +1555,30 @@ async function posCommit(finalize){
   if(methodEl)posPaymentMethod=methodEl.value;
   try{
     let customerId=posCustomerId;
-    if(!customerId&&posNewCustomerName.trim()){
-      const {data,error}=await sb.from('desk_customers').insert({
-        name:posNewCustomerName.trim(),
-        mobile:posNewCustomerMobile.trim()||null,
-        phone:posNewCustomerPhone.trim()||null,
-        email:posNewCustomerEmail.trim()||null
-      }).select();
-      if(error)throw error;
-      customerId=data[0].id;
-      await loadCustomers();
-    }
-    if(!customerId)customerId=await getOrCreateWalkInCustomer();
-    if(!customerId){showToast('Could not set up a customer for this sale');return}
-    const {data,error}=await sb.from('desk_invoices').insert({customer_id:customerId,doc_type:'invoice',is_pos_sale:true,discount_type:posDiscountType,discount_value:posDiscountValue}).select();
+    const newCustomer=(!customerId&&posNewCustomerName.trim())?{
+      name:posNewCustomerName.trim(),
+      mobile:posNewCustomerMobile.trim()||null,
+      phone:posNewCustomerPhone.trim()||null,
+      email:posNewCustomerEmail.trim()||null
+    }:null;
+    if(!customerId&&!newCustomer)customerId=await getOrCreateWalkInCustomer();
+    if(!customerId&&!newCustomer){showToast('Could not set up a customer for this sale');return}
+    const items=posCart.map(it=>({description:it.description,qty:it.qty,unit_price:it.unit_price,stock_id:it.stock_id||null}));
+    // Customer + invoice + items + payment + paid status all go through one
+    // Postgres function (desk_pos_commit) so a sale is one transaction — a
+    // late failure can no longer leave a paid-amount payment on a draft
+    // invoice, or an invoice with no items. See the atomic-saves plan.
+    const {error}=await sb.rpc('desk_pos_commit',{
+      p_customer_id:customerId||null,
+      p_new_customer:newCustomer,
+      p_items:items,
+      p_discount_type:posDiscountType,
+      p_discount_value:posDiscountValue,
+      p_finalize:!!finalize,
+      p_method:posPaymentMethod
+    });
     if(error)throw error;
-    const invoiceId=data[0].id;
-    const items=posCart.map((it,i)=>({invoice_id:invoiceId,description:it.description,qty:it.qty,unit_price:it.unit_price,stock_id:it.stock_id||null,sort_order:i}));
-    const {error:itemsErr}=await sb.from('desk_invoice_items').insert(items);
-    if(itemsErr)throw itemsErr;
-    if(finalize){
-      const {totalIncl}=calcInvoiceTotals(posCart,posDiscountType,posDiscountValue);
-      const {error:payErr}=await sb.from('desk_payments').insert({invoice_id:invoiceId,amount:totalIncl,method:posPaymentMethod,paid_at:toDateInputValue(new Date()),notes:'POS sale'});
-      if(payErr)throw payErr;
-      await sb.from('desk_invoices').update({status:'paid'}).eq('id',invoiceId);
-    }
+    if(newCustomer)await loadCustomers();
     showToast(finalize?'Sale complete':'Sale parked');
     posClear();
     await loadPosSales();
