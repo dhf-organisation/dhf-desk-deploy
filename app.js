@@ -3906,12 +3906,13 @@ async function convertQuoteToInvoice(quoteId){
     await loadInvoiceItems(quoteId);
     const itemsToCopy=invoiceItems;
     const {data,error}=await sb.from('desk_invoices').insert({
-      customer_id:q.customer_id,vehicle_id:q.vehicle_id,job_id:q.job_id,doc_type:'invoice',notes:q.notes
+      customer_id:q.customer_id,vehicle_id:q.vehicle_id,job_id:q.job_id,doc_type:'invoice',notes:q.notes,
+      order_no:q.order_no||null,discount_type:q.discount_type||null,discount_value:q.discount_value||null
     }).select();
     if(error)throw error;
     const newInvId=data[0].id;
     if(itemsToCopy.length){
-      const rows=itemsToCopy.map(it=>({invoice_id:newInvId,description:it.description,qty:it.qty,unit_price:it.unit_price,stock_id:it.stock_id||null}));
+      const rows=itemsToCopy.map(it=>({invoice_id:newInvId,description:it.description,qty:it.qty,unit_price:it.unit_price,stock_id:it.stock_id||null,is_header:it.is_header,sort_order:it.sort_order,tax_type:it.tax_type,account_code:it.account_code||null}));
       const {error:itemsErr}=await sb.from('desk_invoice_items').insert(rows);
       if(itemsErr)throw itemsErr;
     }
