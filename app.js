@@ -3850,7 +3850,7 @@ function openRecordPaymentModal(invoiceId,balanceDue){
         ${selectablePaymentMethods().map(m=>`<option value="${m}">${PAYMENT_METHOD_LABELS[m]}</option>`).join('')}
       </select>
       <label class="form-label">Date</label>
-      <input class="form-input" type="date" id="pay-date" value="${new Date().toISOString().slice(0,10)}">
+      <input class="form-input" type="date" id="pay-date" value="${isoDateOnly(new Date())}">
       <label class="form-label">Notes</label>
       <input class="form-input" id="pay-notes">
       <div class="form-actions">
@@ -3867,7 +3867,7 @@ async function savePayment(invoiceId){
   const amount=parseFloat(document.getElementById('pay-amount').value);
   if(!amount||amount<=0){showToast('Enter a valid amount');return}
   const method=document.getElementById('pay-method').value;
-  const paidAt=document.getElementById('pay-date').value||new Date().toISOString().slice(0,10);
+  const paidAt=document.getElementById('pay-date').value||isoDateOnly(new Date());
   const notes=document.getElementById('pay-notes').value.trim()||null;
   try{
     const {error}=await sb.from('desk_payments').insert({invoice_id:invoiceId,amount,method,paid_at:paidAt,notes});
@@ -4487,7 +4487,13 @@ function addMonths(date,months){
   d.setMonth(d.getMonth()+months);
   return d;
 }
-function toDateInputValue(d){return d.toISOString().slice(0,10)}
+// Was `d.toISOString().slice(0,10)` — UTC, so in Melbourne (UTC+10/+11)
+// "today" read as yesterday before 10-11am, and startOfWeek() (which is
+// itself correct, local midnight Sunday) would serialize one day early,
+// landing on Saturday. isoDateOnly() already builds the string from local
+// date parts — delegate to it instead of keeping a second implementation
+// that can drift back out of sync.
+function toDateInputValue(d){return isoDateOnly(d)}
 function fmtDate(dstr){
   return dstr?new Date(dstr+'T00:00:00').toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'}):null;
 }
@@ -4624,7 +4630,7 @@ async function saveServiceReminder(jobId){
       next_service_due_odometer:dueOdo,
       last_service_type_id:typeId,
       last_service_job_id:jobId,
-      last_serviced_at:new Date().toISOString().slice(0,10),
+      last_serviced_at:isoDateOnly(new Date()),
       reminder_sent_at:null,
       updated_at:new Date().toISOString()
     }
