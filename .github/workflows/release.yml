@@ -1,0 +1,37 @@
+name: Tagged release
+
+# Audit trail only — NOT a deploy gate. "Merging is releasing" is still how
+# code actually reaches production (see docs/release-and-rollback.md);
+# Netlify auto-publishes master exactly as it does today, unaffected by this
+# workflow. Pushing a vX.Y.Z tag here just records what was live and when,
+# with a real changelog, rather than being able to reconstruct it only from
+# git log. The real tag → approval → production gate is a later, separate
+# piece of work for once staging exists — this is deliberately not that.
+#
+# Versioning is a manual human call: pick and push a tag yourself —
+#   git tag vX.Y.Z && git push origin vX.Y.Z
+# — there's no auto-bump tooling here on purpose; semver decisions shouldn't
+# be automated for an app with no version number today.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # --generate-notes needs full history to diff against the previous tag
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
