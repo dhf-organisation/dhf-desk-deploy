@@ -3307,6 +3307,22 @@ async function deleteCreditApplication(applicationId,creditNoteId){
     if(app?.payment_id){
       await sb.from('desk_payments').delete().eq('id',app.payment_id);
     }
+    // Same un-pay gap as deletePayment: a credit application can have paid
+    // off an invoice, so removing it can leave that invoice showing paid
+    // with nothing actually covering it. Queried fresh rather than off the
+    // global `invoices` cache (as deletePayment does) — this is reached
+    // from the Credit Notes view, which may never have loaded the Invoices
+    // tab's data this session.
+    if(app?.invoice_id){
+      const {data:invRow}=await sb.from('desk_invoices').select('status,is_pos_sale,discount_type,discount_value,items:desk_invoice_items(qty,unit_price,is_header),payments:desk_payments(amount)').eq('id',app.invoice_id).single();
+      if(invRow?.status==='paid'){
+        const {totalIncl}=calcInvoiceTotals(invRow.items,invRow.discount_type,invRow.discount_value);
+        const paidSum=(invRow.payments||[]).reduce((s,p)=>s+Number(p.amount),0);
+        if(paidSum<totalIncl-0.01){
+          await sb.from('desk_invoices').update({status:invRow.is_pos_sale?'draft':'sent',updated_at:new Date().toISOString()}).eq('id',app.invoice_id);
+        }
+      }
+    }
     showToast('Removed');
     await loadCreditNotes();
     await renderCreditNoteDetail(creditNoteId);
