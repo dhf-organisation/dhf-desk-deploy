@@ -3271,20 +3271,22 @@ async function saveApplyCredit(creditNoteId,remaining){
   const appliedAt=document.getElementById('ac-date').value||toDateInputValue(new Date());
   const notes=document.getElementById('ac-notes').value.trim()||null;
   try{
-    let paymentId=null;
-    if(invoiceId){
-      const {data,error}=await sb.from('desk_payments').insert({invoice_id:invoiceId,amount,method:'credit_note',paid_at:appliedAt,notes:notes||`CN-${creditNotes.find(x=>x.id===creditNoteId)?.credit_note_no||''}`}).select();
-      if(error)throw error;
-      paymentId=data[0].id;
-      const {data:invRow}=await sb.from('desk_invoices').select('discount_type,discount_value,items:desk_invoice_items(qty,unit_price,is_header),payments:desk_payments(amount)').eq('id',invoiceId).single();
-      const {totalIncl:invTotal}=calcInvoiceTotals(invRow?.items,invRow?.discount_type,invRow?.discount_value);
-      const invPaid=(invRow?.payments||[]).reduce((s,p)=>s+Number(p.amount),0);
-      if(invPaid>=invTotal-0.01){
-        await sb.from('desk_invoices').update({status:'paid',updated_at:new Date().toISOString()}).eq('id',invoiceId);
-      }
-    }
-    const {error:appErr}=await sb.from('desk_credit_applications').insert({credit_note_id:creditNoteId,invoice_id:invoiceId,payment_id:paymentId,amount,method,applied_at:appliedAt,notes});
-    if(appErr)throw appErr;
+    const effectiveNotes=invoiceId?(notes||`CN-${creditNotes.find(x=>x.id===creditNoteId)?.credit_note_no||''}`):notes;
+    // Payment insert + paid-status recompute + credit-application insert all
+    // go through one Postgres function (desk_apply_credit) so applying a
+    // credit is one transaction — trg_desk_credit_application_guard can
+    // still reject the last insert (e.g. amount exceeds the remaining
+    // credit balance), but now that rolls back the payment and status
+    // update too, instead of leaving them behind. See the atomic-saves plan.
+    const {error}=await sb.rpc('desk_apply_credit',{
+      p_credit_note_id:creditNoteId,
+      p_amount:amount,
+      p_method:method,
+      p_invoice_id:invoiceId,
+      p_applied_at:appliedAt,
+      p_notes:effectiveNotes
+    });
+    if(error)throw error;
     closeModal();
     showToast(invoiceId?'Credit applied to invoice':'Credit refund logged');
     await loadCreditNotes();
