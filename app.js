@@ -8223,28 +8223,21 @@ async function saveNewJob(){
     }
   }
   try{
-    let customerId=newJobCustomerId;
-    if(!customerId){
-      const {data,error}=await sb.from('desk_customers').insert({
-        name:newJobCustomerName.trim(),
-        mobile:document.getElementById('nj-new-cust-mobile')?.value.trim()||null,
-        phone:document.getElementById('nj-new-cust-phone')?.value.trim()||null,
-        email:document.getElementById('nj-new-cust-email')?.value.trim()||null
-      }).select();
-      if(error)throw error;
-      customerId=data[0].id;
-    }
-    let vehicleId=newJobVehicleId;
+    const newCustomer=newJobCustomerId?null:{
+      name:newJobCustomerName.trim(),
+      mobile:document.getElementById('nj-new-cust-mobile')?.value.trim()||null,
+      phone:document.getElementById('nj-new-cust-phone')?.value.trim()||null,
+      email:document.getElementById('nj-new-cust-email')?.value.trim()||null
+    };
+    let newVehicle=null;
     const vRegoEl=document.getElementById('nj-veh-rego');
-    if(vRegoEl){
+    if(vRegoEl&&!newJobVehicleId){
       const vRego=vRegoEl.value.trim();
       const vMake=document.getElementById('nj-veh-make').value.trim();
       const vModel=document.getElementById('nj-veh-model').value.trim();
       const vOdo=document.getElementById('nj-veh-odo').value;
       if(vRego||vMake||vModel||vOdo){
-        const {data,error}=await sb.from('desk_vehicles').insert({customer_id:customerId,rego:vRego||null,make:vMake||null,model:vModel||null,odometer:vOdo?parseInt(vOdo,10):null}).select();
-        if(error)throw error;
-        vehicleId=data[0].id;
+        newVehicle={rego:vRego||null,make:vMake||null,model:vModel||null,odometer:vOdo||null};
       }
     }
     const totalEstimate=legs.length>1?legs.reduce((s,l)=>s+l.duration,0):(estimateVal?parseFloat(estimateVal):null);
@@ -8254,9 +8247,7 @@ async function saveNewJob(){
     // the staff app's "My Jobs" filters on; see migration-staff-app.sql.
     const mechanicEmployeeId=document.getElementById('nj-mechanic').value||null;
     const mechanicEmployee=mechanicEmployeeId?employees.find(e=>e.id===mechanicEmployeeId):null;
-    const payload={
-      customer_id:customerId,
-      vehicle_id:vehicleId||null,
+    const jobPayload={
       job_type:jobType,
       division,
       bay,
@@ -8268,13 +8259,19 @@ async function saveNewJob(){
       source_id:document.getElementById('nj-source').value||null,
       order_no:orderNo||null
     };
-    const {data:jobData,error}=await sb.from('desk_jobs').insert(payload).select();
+    // Customer + vehicle + job + hoist legs all go through one Postgres
+    // function (desk_create_job) so the whole booking is one transaction —
+    // a late failure can no longer leave an orphaned customer/vehicle behind
+    // for a job that never got created. See the atomic-saves plan.
+    const {error}=await sb.rpc('desk_create_job',{
+      p_customer_id:newJobCustomerId||null,
+      p_new_customer:newCustomer,
+      p_vehicle_id:newJobVehicleId||null,
+      p_new_vehicle:newVehicle,
+      p_job:jobPayload,
+      p_legs:legs.length>1?legs:null
+    });
     if(error)throw error;
-    if(legs.length>1){
-      const legRows=legs.map((l,i)=>({job_id:jobData[0].id,division:l.division,bay:l.bay,duration_hours:l.duration,sequence:i}));
-      const {error:legErr}=await sb.from('desk_job_hoist_legs').insert(legRows);
-      if(legErr)throw legErr;
-    }
     closeModal();
     showToast('Job created');
     await loadCustomers();
