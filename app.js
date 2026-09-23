@@ -8625,6 +8625,16 @@ function sameLocalDate(a,b){
 function isoDateOnly(d){
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
+// A job is multi-day when its pickup falls on a later LOCAL date than its
+// booking, not later UTC date — booked_at/pickup_at come back from Supabase
+// in UTC, and comparing their raw .slice(0,10) treats anything booked after
+// ~10-11am Melbourne time as starting "the next day", making same-day jobs
+// falsely span two columns. One shared predicate so the diary-grid bar
+// logic and the per-day exclusion filter can never drift out of sync with
+// each other again (they used to, independently, both wrong the same way).
+function isMultiDayJob(j){
+  return !!(j.booked_at&&j.pickup_at&&isoDateOnly(new Date(j.pickup_at))>isoDateOnly(new Date(j.booked_at)));
+}
 
 async function loadDiaryData(){
   await Promise.all([
@@ -8855,31 +8865,61 @@ function renderDiaryWeekGrid(){
   });
 
   // Multi-day jobs — render as spanning bars across day columns.
-  // A job is multi-day when pickup_at falls on a later date than booked_at.
   // The bar sits absolutely positioned inside .diary-grid, spanning from the
   // booked column to the pickup column. These jobs are excluded from the
   // regular diaryDayBodyContentHtml below so they only appear once.
-  jobs.filter(j=>j.booked_at&&j.pickup_at&&j.pickup_at.slice(0,10)>j.booked_at.slice(0,10)&&jobMatchesTagFilter(j))
-    .forEach(j=>{
-      const bd=j.booked_at.slice(0,10), pd=j.pickup_at.slice(0,10);
-      const startIdx=days.findIndex(d=>isoDateOnly(d)===bd);
-      const endIdx=days.findIndex(d=>isoDateOnly(d)===pd);
-      if(startIdx===-1)return;
-      const spanCols=(endIdx===-1?6:Math.max(endIdx,startIdx))-startIdx+1;
-      const pctPerCol=100/7;
-      const left=startIdx*pctPerCol, w=spanCols*pctPerCol;
-      const contact=j.customer?.mobile||j.customer?.phone||'';
-      const vehDesc=j.vehicle?([j.vehicle.make,j.vehicle.model].filter(Boolean).join(' ')+(j.vehicle.rego?' ('+j.vehicle.rego+')':'')):'';
-      const tags=jobTagsMap[j.id]||[];
-      h+=`<div class="diary-multiday-card ${j.status}" style="left:calc(${left}% + 4px);width:calc(${w}% - 8px)"
-            draggable="true" ondragstart="onDiaryDragStart(event,'${j.id}')" ondragend="onDiaryDragEnd(event)"
-            onclick="openJobFromDiary(event,'${j.id}')">
-        <span class="diary-multiday-time">${new Date(j.booked_at).toLocaleTimeString('en-AU',{hour:'numeric',minute:'2-digit'})}</span>
-        <span class="diary-multiday-type">${esc(j.job_type)}</span>
-        <span class="diary-multiday-sub"><strong>${esc(j.customer?.name||'Unknown')}</strong>${contact?' · '+esc(contact):''}${vehDesc?' · '+esc(vehDesc):''}</span>
-        ${tags.length?`<span class="diary-multiday-tags">${tags.map(t=>`<span class="tag-chip" style="background:${esc(t.color)};font-size:9px">${esc(t.name)}</span>`).join('')}</span>`:''}
-      </div>`;
-    });
+  //
+  // Dates are compared as local YYYY-MM-DD strings (isMultiDayJob, above),
+  // not UTC slices — booked_at/pickup_at come back from Supabase in UTC, and
+  // comparing the raw ISO strings treated anything booked after ~10-11am
+  // Melbourne time as "starting the next day".
+  //
+  // A bar that starts before this visible week (still ongoing from an
+  // earlier week) or ends after it is clamped to the visible column range
+  // rather than skipped entirely — it used to disappear outright the moment
+  // its start date fell outside `days`.
+  const weekStartStr=isoDateOnly(days[0]), weekEndStr=isoDateOnly(days[6]);
+  const bars=jobs.filter(j=>isMultiDayJob(j)&&jobMatchesTagFilter(j))
+    .map(j=>{
+      const bd=isoDateOnly(new Date(j.booked_at)), pd=isoDateOnly(new Date(j.pickup_at));
+      return {j,bd,pd};
+    })
+    .filter(({bd,pd})=>bd<=weekEndStr&&pd>=weekStartStr) // overlaps this week at all
+    .map(({j,bd,pd})=>({
+      j,
+      startIdx:bd<weekStartStr?0:days.findIndex(d=>isoDateOnly(d)===bd),
+      endIdx:pd>weekEndStr?6:days.findIndex(d=>isoDateOnly(d)===pd)
+    }))
+    .sort((a,b)=>a.startIdx-b.startIdx);
+
+  // Stack overlapping bars into separate rows (greedy interval packing) so
+  // two multi-day jobs in the same week no longer sit on top of each other,
+  // covering the first one's day cards underneath.
+  const rowEnds=[];
+  bars.forEach(bar=>{
+    let row=rowEnds.findIndex(end=>end<bar.startIdx);
+    if(row===-1){row=rowEnds.length;rowEnds.push(bar.endIdx)}
+    else rowEnds[row]=bar.endIdx;
+    bar.row=row;
+  });
+
+  bars.forEach(({j,startIdx,endIdx,row})=>{
+    const spanCols=endIdx-startIdx+1;
+    const pctPerCol=100/7;
+    const left=startIdx*pctPerCol, w=spanCols*pctPerCol;
+    const top=56+row*60;
+    const contact=j.customer?.mobile||j.customer?.phone||'';
+    const vehDesc=j.vehicle?([j.vehicle.make,j.vehicle.model].filter(Boolean).join(' ')+(j.vehicle.rego?' ('+j.vehicle.rego+')':'')):'';
+    const tags=jobTagsMap[j.id]||[];
+    h+=`<div class="diary-multiday-card ${j.status}" style="left:calc(${left}% + 4px);width:calc(${w}% - 8px);top:${top}px"
+          draggable="true" ondragstart="onDiaryDragStart(event,'${j.id}')" ondragend="onDiaryDragEnd(event)"
+          onclick="openJobFromDiary('${j.id}')">
+      <span class="diary-multiday-time">${new Date(j.booked_at).toLocaleTimeString('en-AU',{hour:'numeric',minute:'2-digit'})}</span>
+      <span class="diary-multiday-type">${esc(j.job_type)}</span>
+      <span class="diary-multiday-sub"><strong>${esc(j.customer?.name||'Unknown')}</strong>${contact?' · '+esc(contact):''}${vehDesc?' · '+esc(vehDesc):''}</span>
+      ${tags.length?`<span class="diary-multiday-tags">${tags.map(t=>`<span class="tag-chip" style="background:${esc(t.color)};font-size:9px">${esc(t.name)}</span>`).join('')}</span>`:''}
+    </div>`;
+  });
 
   h+='</div>';
   main.innerHTML=h;
@@ -8896,7 +8936,7 @@ function renderDiaryWeekGrid(){
 function diaryDayBodyContentHtml(d,dateStr){
   const dayJobs=jobs.filter(j=>j.booked_at&&sameLocalDate(new Date(j.booked_at),d)&&jobMatchesTagFilter(j)
     // Multi-day jobs render as spanning bars — exclude from regular day columns
-    &&!(j.pickup_at&&j.pickup_at.slice(0,10)>j.booked_at.slice(0,10)))
+    &&!isMultiDayJob(j))
     .sort((a,b)=>new Date(a.booked_at)-new Date(b.booked_at));
   const notesForDay=dayNotes.filter(n=>n.note_date===dateStr);
   return `
