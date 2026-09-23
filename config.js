@@ -22,5 +22,5 @@ window.DHF_CONFIG = {
   // Cosmetic only: the database (RLS) is what actually decides who is staff.
   // Kept here so non-production environments can use their own test accounts.
   allowedDomain: 'dhftyres.com.au',
-  allowedEmails: ['dushentissera@gmail.com']
+  allowedEmails: ['dushentissera@gmail.com', 'lwijesuriya97@gmail.com']
 };
