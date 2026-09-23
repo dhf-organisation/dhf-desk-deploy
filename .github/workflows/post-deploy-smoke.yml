@@ -5,6 +5,13 @@ name: Post-deploy smoke
 # actually serving the app — and that the publish allowlist still holds, so a
 # repeat of "the whole site 404s" (8 September 2026) is caught in minutes
 # rather than by a phone call from the workshop.
+#
+# Self-healing: if the smoke test still fails after retrying (so it's not
+# just a transient blip), production is automatically rolled back to the
+# last known-good deploy via the Netlify API, and a GitHub issue is opened
+# documenting it — never a silent auto-action. The rollback doesn't fix
+# anything on master; it just stops a broken deploy from staying live while
+# someone fixes or reverts the actual commit.
 
 on:
   push:
@@ -17,6 +24,9 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -27,5 +37,43 @@ jobs:
       - name: Wait for the Netlify deploy to publish
         run: sleep 90
 
-      - name: Smoke test production
-        run: node scripts/smoke.mjs https://dhf-desk.netlify.app
+      - name: Smoke test production (retried 3x — a transient blip shouldn't trigger a rollback)
+        id: smoke
+        run: |
+          for attempt in 1 2 3; do
+            if node scripts/smoke.mjs https://dhf-desk.netlify.app; then
+              echo "passed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Attempt $attempt failed, waiting 30s before retry…"
+            sleep 30
+          done
+          echo "passed=false" >> "$GITHUB_OUTPUT"
+          exit 1
+        continue-on-error: true
+
+      - name: Roll back production to the last known-good deploy
+        if: steps.smoke.outputs.passed == 'false'
+        run: node scripts/netlify-rollback.mjs "${{ github.sha }}"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
+      - name: Open an issue documenting the rollback
+        if: steps.smoke.outputs.passed == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Auto-rollback: smoke test failed after ${GITHUB_SHA:0:7}" \
+            --label bug \
+            --body "Production failed its post-deploy smoke test 3 times in a row after this push, so it was automatically rolled back to the last known-good deploy.
+
+          Commit: ${{ github.sha }}
+          Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Production is now serving the previous deploy. This commit is still on \`master\` and needs a fix or a revert."
+
+      - name: Fail the job — a rollback ran, this push still needs attention
+        if: steps.smoke.outputs.passed == 'false'
+        run: exit 1
