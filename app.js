@@ -2408,21 +2408,21 @@ async function setPoStatus(id,status){
   try{
     const po=purchaseOrders.find(x=>x.id===id);
     if(status==='received'&&po&&po.status!=='received'){
-      await loadPoItems(id);
-      for(const it of poItems){
-        if(!it.stock_id)continue;
-        const stock=stockItems.find(s=>s.id===it.stock_id);
-        if(!stock)continue;
-        const qtyBefore=Number(stock.qty_on_hand)||0;
-        const qtyAfter=qtyBefore+Number(it.qty);
-        await sb.from('desk_stock').update({qty_on_hand:qtyAfter,updated_at:new Date().toISOString()}).eq('id',it.stock_id);
-        await sb.from('desk_stock_adjustments').insert({stock_id:it.stock_id,qty_before:qtyBefore,qty_after:qtyAfter,reason:'Received PO-'+po.po_no});
-        stock.qty_on_hand=qtyAfter;
-      }
+      // Stock qty bump + adjustment log + PO status all go through one
+      // Postgres function (desk_receive_po): a single atomic
+      // `qty_on_hand = qty_on_hand + n` per item instead of a browser-side
+      // read-then-write, so a concurrent change to the same stock row can't
+      // be silently overwritten, and a failure partway through can't leave
+      // some items bumped and others not. See the atomic-saves plan.
+      const {error:rpcErr}=await sb.rpc('desk_receive_po',{p_po_id:id});
+      if(rpcErr)throw rpcErr;
+      await loadStockItems();
+      showToast('Received — stock levels updated');
+    }else{
+      const {error}=await sb.from('desk_purchase_orders').update({status,updated_at:new Date().toISOString()}).eq('id',id);
+      if(error)throw error;
+      showToast('Status updated');
     }
-    const {error}=await sb.from('desk_purchase_orders').update({status,updated_at:new Date().toISOString()}).eq('id',id);
-    if(error)throw error;
-    showToast(status==='received'?'Received — stock levels updated':'Status updated');
     await loadPurchaseOrders();
     await renderPoDetail(id);
   }catch(e){showToast('Could not update status')}
