@@ -1,0 +1,33 @@
+name: Dependabot auto-merge
+
+# Dependabot here only watches the github-actions ecosystem (see
+# .github/dependabot.yml — the app has no package manager, so there are no
+# app dependencies to bump), grouped into at most 2 PRs/week. Low risk: these
+# never touch app runtime code, and using the new action version IS the test —
+# if a bump breaks something, the PR's own required CI checks fail on it and
+# it never merges.
+#
+# This does NOT bypass review or CI. It only flips on GitHub's native
+# auto-merge flag for the PR; the branch ruleset's required checks (the same
+# ones every human PR goes through) still have to pass before GitHub actually
+# merges it. If a check fails, the PR just sits there like any other failed
+# PR — nothing forces it through.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable auto-merge
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
