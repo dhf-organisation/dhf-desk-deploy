@@ -9,7 +9,7 @@
 // What this does NOT do: touch production in any way beyond the read-only
 // pull above, which is a separate, explicit step. This script only talks to
 // the local Docker containers it starts.
-import { existsSync, copyFileSync, unlinkSync } from 'node:fs';
+import { existsSync, copyFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
 const SCHEMA_FILE = 'supabase/.local-schema.sql';
@@ -106,6 +106,12 @@ process.on('SIGINT', () => {
   process.exit(130); // 128 + SIGINT(2), the conventional shell exit code
 });
 
+// supabase/migrations/ isn't tracked by git when empty (and can't be
+// committed with real content yet anyway -- see #6), so a genuinely fresh
+// checkout -- a new developer's first run, or a CI runner -- won't have it
+// on disk at all. copyFileSync into a directory that doesn't exist fails
+// with ENOENT; create it first rather than assuming it's already there.
+mkdirSync('supabase/migrations', { recursive: true });
 copyFileSync(SCHEMA_FILE, TEMP_MIGRATION);
 // --local scopes this to the stack `supabase start` just brought up — never
 // production. --no-seed: seeding is a separate, explicit step
