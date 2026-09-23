@@ -1,0 +1,67 @@
+name: RLS tests (pgTAP)
+
+# Pulls the current production schema (read-only, via the Management API —
+# the same script every developer runs locally, scripts/db-pull-schema.mjs)
+# into a fresh local Supabase stack, and runs the pgTAP suite in
+# supabase/tests/database/ against it. Proves RLS policies actually enforce
+# what they claim to, not just that the comment next to them says so — a
+# permission or RLS regression fails here instead of reaching production.
+#
+# Because schema/RLS changes to this repo happen directly against
+# production via the Management API (migrations can't be committed yet —
+# see #6, the public/private repo decision), this workflow isn't testing
+# "did this PR change RLS" so much as "does production's CURRENT RLS state
+# still do what these tests expect" — a continuous regression net, not a
+# diff-specific check. Runs on every PR and push to master per the card's
+# own definition of done, plus a weekly schedule (same cadence as
+# gitleaks/Dependabot) so drift from a manual production change — this
+# repo's normal way of changing RLS today — gets caught even with no PR to
+# trigger it.
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  schedule:
+    - cron: '0 22 * * 0' # Sunday 22:00 UTC = Monday 08:00 Melbourne
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rls-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pgtap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
+        with:
+          version: latest
+
+      - name: Write the Supabase PAT to the path scripts/db-pull-schema.mjs expects
+        run: |
+          mkdir -p ~/.config/dhf-desk
+          echo "SUPABASE_ACCESS_TOKEN=${{ secrets.SUPABASE_ACCESS_TOKEN }}" > ~/.config/dhf-desk/env
+          chmod 600 ~/.config/dhf-desk/env
+
+      - name: Pull the current production schema (read-only)
+        run: node scripts/db-pull-schema.mjs
+
+      - name: Start the local Supabase stack and apply the pulled schema
+        run: node scripts/db-local-up.mjs
+
+      - name: Run the pgTAP RLS test suite
+        run: supabase test db --local
+
+      - name: Stop the stack
+        if: always()
+        run: supabase stop
