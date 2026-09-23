@@ -1370,14 +1370,14 @@ async function getOrCreateWalkInCustomer(){
 async function loadPosSales(){
   try{
     const {data,error}=await sb.from('desk_invoices')
-      .select('id,invoice_no,customer:desk_customers(name),items:desk_invoice_items(qty,unit_price),created_at')
+      .select('id,invoice_no,customer:desk_customers(name),items:desk_invoice_items(qty,unit_price,is_header),discount_type,discount_value,created_at')
       .eq('is_pos_sale',true).eq('status','draft').order('created_at',{ascending:false});
     if(error)throw error;
     posParkedSales=data||[];
   }catch(e){posParkedSales=[]}
   try{
     const {data,error}=await sb.from('desk_invoices')
-      .select('id,invoice_no,customer:desk_customers(name),items:desk_invoice_items(qty,unit_price),created_at')
+      .select('id,invoice_no,customer:desk_customers(name),items:desk_invoice_items(qty,unit_price,is_header),discount_type,discount_value,created_at')
       .eq('is_pos_sale',true).eq('status','paid').order('created_at',{ascending:false}).limit(10);
     if(error)throw error;
     posClosedSales=data||[];
@@ -1394,7 +1394,7 @@ async function renderPosView(){
 }
 
 function posSaleTotal(sale){
-  return (sale.items||[]).reduce((s,it)=>s+Number(it.qty)*Number(it.unit_price),0);
+  return calcInvoiceTotals(sale.items,sale.discount_type,sale.discount_value).totalIncl;
 }
 
 function posCustomerAreaHtml(){
@@ -3201,12 +3201,12 @@ async function deleteCreditNoteItem(itemId){
 // A refund just logs the application with no invoice/payment link.
 async function loadCreditNoteEligibleInvoices(customerId){
   try{
-    const {data,error}=await sb.from('desk_invoices').select('id,invoice_no,status,items:desk_invoice_items(qty,unit_price),payments:desk_payments(amount)').eq('customer_id',customerId).eq('doc_type','invoice').neq('status','paid').order('invoice_no',{ascending:false});
+    const {data,error}=await sb.from('desk_invoices').select('id,invoice_no,status,discount_type,discount_value,items:desk_invoice_items(qty,unit_price,is_header),payments:desk_payments(amount)').eq('customer_id',customerId).eq('doc_type','invoice').neq('status','paid').order('invoice_no',{ascending:false});
     if(error)throw error;
     return (data||[]).map(i=>{
-      const total=(i.items||[]).reduce((s,it)=>s+Number(it.qty)*Number(it.unit_price),0);
+      const {totalIncl}=calcInvoiceTotals(i.items,i.discount_type,i.discount_value);
       const paid=(i.payments||[]).reduce((s,p)=>s+Number(p.amount),0);
-      return {id:i.id,invoice_no:i.invoice_no,balance:total-paid};
+      return {id:i.id,invoice_no:i.invoice_no,balance:totalIncl-paid};
     }).filter(i=>i.balance>0.01);
   }catch(e){return []}
 }
@@ -3277,10 +3277,9 @@ async function saveApplyCredit(creditNoteId,remaining){
       const {data,error}=await sb.from('desk_payments').insert({invoice_id:invoiceId,amount,method:'credit_note',paid_at:appliedAt,notes:notes||`CN-${creditNotes.find(x=>x.id===creditNoteId)?.credit_note_no||''}`}).select();
       if(error)throw error;
       paymentId=data[0].id;
-      const {data:invItems}=await sb.from('desk_invoice_items').select('qty,unit_price').eq('invoice_id',invoiceId);
-      const {data:invPayments}=await sb.from('desk_payments').select('amount').eq('invoice_id',invoiceId);
-      const invTotal=(invItems||[]).reduce((s,it)=>s+Number(it.qty)*Number(it.unit_price),0);
-      const invPaid=(invPayments||[]).reduce((s,p)=>s+Number(p.amount),0);
+      const {data:invRow}=await sb.from('desk_invoices').select('discount_type,discount_value,items:desk_invoice_items(qty,unit_price,is_header),payments:desk_payments(amount)').eq('id',invoiceId).single();
+      const {totalIncl:invTotal}=calcInvoiceTotals(invRow?.items,invRow?.discount_type,invRow?.discount_value);
+      const invPaid=(invRow?.payments||[]).reduce((s,p)=>s+Number(p.amount),0);
       if(invPaid>=invTotal-0.01){
         await sb.from('desk_invoices').update({status:'paid',updated_at:new Date().toISOString()}).eq('id',invoiceId);
       }
@@ -3890,7 +3889,18 @@ async function deletePayment(paymentId,invoiceId){
   try{
     const {error}=await sb.from('desk_payments').delete().eq('id',paymentId);
     if(error)throw error;
+    const inv=invoices.find(x=>x.id===invoiceId);
+    if(inv&&inv.status==='paid'){
+      await loadInvoiceItems(invoiceId);
+      await loadInvoicePayments(invoiceId);
+      const {totalIncl}=calcInvoiceTotals(invoiceItems,inv.discount_type,inv.discount_value);
+      const paidSum=invoicePayments.reduce((s,p)=>s+Number(p.amount),0);
+      if(paidSum<totalIncl-0.01){
+        await sb.from('desk_invoices').update({status:inv.is_pos_sale?'draft':'sent',updated_at:new Date().toISOString()}).eq('id',invoiceId);
+      }
+    }
     showToast('Payment removed');
+    await loadInvoices();
     await renderInvoiceDetail(invoiceId);
   }catch(e){showToast('Could not remove payment')}
 }
