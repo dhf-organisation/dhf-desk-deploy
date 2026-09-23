@@ -1048,7 +1048,13 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
 // authenticated @dhftyres.com.au session, so linkLeadToDeskCustomer() uses
 // deskSb.from(...), not the CRM's own sb.get/post — everything else in this
 // file keeps using the CRM's original sb wrapper, unchanged.
-window.deskSb=supabase.createClient((window.DHF_CONFIG||{}).supabaseUrl||'https://cztpumgrvhmcvvpqbfqo.supabase.co',(window.DHF_CONFIG||{}).supabaseKey||'sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub3');
+// No fallback to production values: a page that can't load its config must
+// refuse to run, not quietly connect to the live database.
+if(!window.DHF_CONFIG||!window.DHF_CONFIG.supabaseUrl||!window.DHF_CONFIG.supabaseKey){
+  document.body.innerHTML='<div style="padding:40px;font:16px system-ui;color:#b91c1c">Configuration failed to load — refusing to start rather than risk connecting to the wrong database. Refresh the page, or contact support if this persists.</div>';
+  throw new Error('DHF_CONFIG missing or incomplete — refusing to start');
+}
+window.deskSb=supabase.createClient(window.DHF_CONFIG.supabaseUrl,window.DHF_CONFIG.supabaseKey);
 (function(){
   deskSb.auth.getSession().then(function(r){
     var email=r.data&&r.data.session&&r.data.session.user&&r.data.session.user.email;
@@ -2534,9 +2540,18 @@ window.deskSb=supabase.createClient((window.DHF_CONFIG||{}).supabaseUrl||'https:
 
 <script>
 // ── SUPABASE ──────────────────────────────────────────────────────────────
-// From config.js (loaded at the top of <body>); fallbacks are production.
-const SB_URL = (window.DHF_CONFIG||{}).supabaseUrl || 'https://cztpumgrvhmcvvpqbfqo.supabase.co';
-const SB_KEY = (window.DHF_CONFIG||{}).supabaseKey || 'sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub3';
+// From config.js (loaded at the top of <body>). No fallback to production
+// values: a page that can't load its config must refuse to run, not
+// quietly connect to the live database. (The auth-gate script block above
+// already checked this and would have stopped the page before this block
+// ever runs — this check exists independently too, since each <script> tag
+// executes on its own and a body wipe there doesn't skip this one.)
+if(!window.DHF_CONFIG||!window.DHF_CONFIG.supabaseUrl||!window.DHF_CONFIG.supabaseKey){
+  document.body.innerHTML='<div style="padding:40px;font:16px system-ui;color:#b91c1c">Configuration failed to load — refusing to start rather than risk connecting to the wrong database. Refresh the page, or contact support if this persists.</div>';
+  throw new Error('DHF_CONFIG missing or incomplete — refusing to start');
+}
+const SB_URL = window.DHF_CONFIG.supabaseUrl;
+const SB_KEY = window.DHF_CONFIG.supabaseKey;
 const H = {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'};
 
 const sb = {

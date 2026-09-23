@@ -843,10 +843,12 @@ input[type=checkbox],input[type=radio],progress{accent-color:var(--accent)}
       <div class="login-title">the desk that <em>keeps</em> the lights on.</div>
       <div class="login-sub">Sign in with your DHF Tyres account.</div>
       <!-- data-client_id is set from config.js before the GSI script loads
-           (see the script block at the bottom of this file); the value here is
-           the production fallback. -->
+           (see the script block at the bottom of this file). Left blank here
+           on purpose, not defaulted to production — app.js already refuses
+           to start if config.js didn't supply a real value, so this markup
+           default is never relied on either way. -->
       <div id="g_id_onload"
-           data-client_id="992833623399-s28cqha40ho2f4s2mvihskiicngb3g5e.apps.googleusercontent.com"
+           data-client_id=""
            data-auto_prompt="false"
            data-callback="handleGoogleSignIn">
       </div>

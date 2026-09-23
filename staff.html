@@ -126,16 +126,22 @@ p.muted{color:var(--text-muted);font-size:var(--text-sm)}
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0" integrity="sha384-JBR+x8blGwjDRO63aHCGiZMD4VNiTR4ZUGA+N6ZKLf3zNt1fK8IBpcgPaMrxqWBp" crossorigin="anonymous"></script>
 <script>
-// Environment config — see config.js. Fallbacks are the production values.
-const DHF_CFG=window.DHF_CONFIG||{};
-const SB_URL=DHF_CFG.supabaseUrl||'https://cztpumgrvhmcvvpqbfqo.supabase.co';
-const SB_KEY=DHF_CFG.supabaseKey||'sb_publishable_uj8jlFriz9gRP-eo2vZEZA_u_qIhub3';
+// Environment config — see config.js. No fallback to production values: a
+// page that can't load its config must refuse to run, not quietly connect
+// to the live database (see docs/security.md).
+const DHF_CFG=window.DHF_CONFIG;
+if(!DHF_CFG||!DHF_CFG.supabaseUrl||!DHF_CFG.supabaseKey){
+  document.body.innerHTML='<div style="padding:40px;font:16px system-ui;color:#b91c1c">Configuration failed to load — refusing to start rather than risk connecting to the wrong database. Refresh the page, or contact support if this persists.</div>';
+  throw new Error('DHF_CONFIG missing or incomplete — refusing to start');
+}
+const SB_URL=DHF_CFG.supabaseUrl;
+const SB_KEY=DHF_CFG.supabaseKey;
 const sb=supabase.createClient(SB_URL,SB_KEY);
 
 // Same allowlist as app.js — deliberately kept identical, not re-derived,
 // so "who counts as staff" can never drift between the two apps.
-const ALLOWED_DOMAIN=DHF_CFG.allowedDomain||'dhftyres.com.au';
-const ALLOWED_EMAILS=DHF_CFG.allowedEmails||['dushentissera@gmail.com'];
+const ALLOWED_DOMAIN=DHF_CFG.allowedDomain||'';
+const ALLOWED_EMAILS=DHF_CFG.allowedEmails||[];
 
 const STATUS_LABEL={booking:'Booking',in_progress:'In Progress',on_hold:'On Hold',finished:'Finished'};
 const STATUS_ORDER=['booking','in_progress','on_hold','finished'];
@@ -191,7 +197,7 @@ function renderSignIn(){
       <h1>Sign in</h1>
       <p class="muted" style="margin-top:var(--space-2)">Use your DHF Tyres Google account.</p>
       <div id="g_id_onload"
-           data-client_id="${DHF_CFG.googleClientId||'992833623399-s28cqha40ho2f4s2mvihskiicngb3g5e.apps.googleusercontent.com'}"
+           data-client_id="${DHF_CFG.googleClientId||''}"
            data-auto_prompt="false"
            data-callback="handleGoogleSignIn"></div>
       <div class="g_id_signin" data-type="standard" data-theme="filled_black" data-size="large" data-text="sign_in_with" data-shape="pill"></div>
