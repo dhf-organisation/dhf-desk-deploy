@@ -318,6 +318,11 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
 .answer-toggle-btn.active.yes{background:var(--green-light);border-color:var(--green);color:var(--green)}
 .answer-toggle-btn.active.no{background:var(--red-light);border-color:var(--red);color:var(--red)}
 .answer-toggle-btn.active{background:var(--blue-light);border-color:var(--blue);color:var(--blue)}
+
+/* Call outcome buttons — all options visible at once */
+.outcome-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px}
+.outcome-btn{padding:9px 8px;border-radius:9px;border:2px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;background:var(--surface);color:var(--muted);transition:.15s;text-align:center}
+.outcome-btn.active{background:var(--blue-light);border-color:var(--blue);color:var(--blue)}
 .followup2-badge{display:inline-flex;align-items:center;gap:4px;background:var(--amber-light);color:var(--amber);border-radius:8px;padding:2px 7px;font-size:10px;font-weight:700}
 
 
@@ -2019,56 +2024,26 @@ window.deskSb=supabase.createClient(window.DHF_CONFIG.supabaseUrl,window.DHF_CON
           <option>Jonelle</option><option>Dinuka</option><option>Keenan</option><option>Jake</option><option>Harsha</option><option>Other</option>
         </select>
       </div>
-      <!-- Step 1: Did they answer? -->
+      <!-- Call outcome — all options visible at once -->
       <div class="log-field">
-        <label>Did they answer?</label>
-        <div style="display:flex;gap:8px;margin-top:2px">
-          <button type="button" class="answer-toggle-btn active" id="btn-answered" onclick="setAnswered(true)">
-            ✅ Yes — Answered
-          </button>
-          <button type="button" class="answer-toggle-btn" id="btn-notanswered" onclick="setAnswered(false)">
-            ❌ No Answer / Voicemail
-          </button>
+        <label>Call outcome</label>
+        <div class="outcome-grid" id="lc-outcome-grid">
+          <button type="button" class="outcome-btn" data-outcome="2nd Follow Up" onclick="pickOutcome(this)">🔄 2nd Follow Up</button>
+          <button type="button" class="outcome-btn" data-outcome="Closed — Won" onclick="pickOutcome(this)">🎉 Won — booked</button>
+          <button type="button" class="outcome-btn" data-outcome="Not Interested" onclick="pickOutcome(this)">❌ Lost — not interested</button>
+          <button type="button" class="outcome-btn" data-outcome="Callback Requested" onclick="pickOutcome(this)">📅 Callback Requested</button>
+          <button type="button" class="outcome-btn" data-outcome="No Answer" onclick="pickOutcome(this)">📵 No Answer</button>
+          <button type="button" class="outcome-btn" data-outcome="Voicemail" onclick="pickOutcome(this)">📬 Voicemail</button>
         </div>
       </div>
 
-      <!-- If answered: what was the result? -->
-      <div id="answered-section" class="log-field">
-        <label>Result of call</label>
-        <select id="lc-answered-result" onchange="syncAnsweredResult()">
-          <option value="2nd Follow Up">🔄 2nd Follow Up — needs another call</option>
-          <option value="Closed — Won">🎉 Won — booked / confirmed</option>
-          <option value="Not Interested">❌ Lost — not interested</option>
-          <option value="Callback Requested">📅 Callback Requested</option>
-        </select>
-      </div>
-
-      <!-- Callback / 2nd Follow Up date picker — shown when relevant -->
-      <div id="callback-datetime-section" class="log-field">
-        <label>📅 Schedule 2nd Call For</label>
+      <!-- Schedule next call — for follow-up / callback / no-answer outcomes -->
+      <div id="callback-datetime-section" class="log-field" style="display:none">
+        <label>📅 Schedule Next Call For</label>
         <input type="datetime-local" id="lc-callback-datetime">
         <div style="margin-top:6px;background:var(--amber-light);border:1px solid var(--warning);border-radius:8px;padding:9px 12px;font-size:12px;color:var(--amber);font-weight:600">
           🔔 This will be shown as the scheduled call time in the 2nd Follow Up list
         </div>
-      </div>
-
-      <!-- If not answered: auto goes to 2nd follow up, but let them pick voicemail/no answer -->
-      <div id="notanswered-section" style="display:none" class="log-field">
-        <label>Not answered reason</label>
-        <select id="lc-notanswered-reason">
-          <option value="No Answer">📵 No Answer</option>
-          <option value="Voicemail">📬 Went to Voicemail</option>
-        </select>
-        <div style="margin-top:8px;background:var(--amber-light);border:1px solid var(--warning);border-radius:8px;padding:9px 12px;font-size:12px;color:var(--amber);font-weight:600">
-          🔄 This lead will automatically move to the <strong>2nd Follow Up list</strong>
-        </div>
-      </div>
-
-      <!-- No answer callback scheduler -->
-      <div id="notanswered-callback-section" style="display:none" class="log-field">
-        <label>📅 Schedule Callback For</label>
-        <input type="datetime-local" id="lc-notanswered-callback">
-        <div style="margin-top:6px;font-size:11px;color:var(--muted)">Optional — when should we try calling again?</div>
       </div>
 
       <div class="log-field">
@@ -4748,72 +4723,28 @@ function openLogCall(itemId, name, phone){
   document.getElementById('lc-datetime').value   = now.toISOString().slice(0,16);
   document.getElementById('lc-notes').value      = '';
   document.getElementById('lc-next-action').value= '';
-  document.getElementById('lc-outcome').value    = 'Answered';
-  document.getElementById('lc-answered-result').value = '2nd Follow Up';
-  document.getElementById('lc-notanswered-reason').value = 'No Answer';
-  document.getElementById('lc-callback-datetime').value = '';
-  document.getElementById('lc-notanswered-callback').value = '';
+  document.getElementById('lc-outcome').value = '2nd Follow Up';
+  // Default outcome = 2nd Follow Up; all buttons visible
+  document.querySelectorAll('#lc-outcome-grid .outcome-btn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.outcome === '2nd Follow Up');
+  });
   // Default callback to tomorrow 10am
   const tom = new Date(); tom.setDate(tom.getDate()+1); tom.setHours(10,0,0,0);
   document.getElementById('lc-callback-datetime').value = tom.toISOString().slice(0,16);
-  document.getElementById('lc-notanswered-callback').value = tom.toISOString().slice(0,16);
-  // Reset to "answered" state
-  callAnswered = true;
-  setAnswered(true);
+  document.getElementById('callback-datetime-section').style.display = '';
   document.getElementById('logCallOverlay').classList.add('open');
 }
 function closeLogCall(){ document.getElementById('logCallOverlay').classList.remove('open'); logCallItemId=null; }
 function closeLogCallOutside(e){ if(e.target===document.getElementById('logCallOverlay')) closeLogCall(); }
 
-// Track answered state
-let callAnswered = true;
-
-function setAnswered(answered){
-  callAnswered = answered;
-  const btnYes = document.getElementById('btn-answered');
-  const btnNo  = document.getElementById('btn-notanswered');
-  const ansSection        = document.getElementById('answered-section');
-  const notAnsSection     = document.getElementById('notanswered-section');
-  const callbackSection   = document.getElementById('callback-datetime-section');
-  const noAnsCallback     = document.getElementById('notanswered-callback-section');
-  const nextField         = document.getElementById('next-action-field');
-
-  btnYes.className = 'answer-toggle-btn' + (answered  ? ' active yes' : '');
-  btnNo.className  = 'answer-toggle-btn' + (!answered ? ' active no'  : '');
-
-  ansSection.style.display        = answered  ? '' : 'none';
-  notAnsSection.style.display     = !answered ? '' : 'none';
-  noAnsCallback.style.display     = !answered ? '' : 'none';
-
-  if(!answered){
-    document.getElementById('lc-outcome').value = 'No Answer';
-    nextField.style.display         = 'none';
-    callbackSection.style.display   = 'none';
-    // Default no-answer callback to tomorrow same time
-    const tom = new Date(); tom.setDate(tom.getDate()+1); tom.setSeconds(0,0);
-    document.getElementById('lc-notanswered-callback').value = tom.toISOString().slice(0,16);
-  } else {
-    const result = document.getElementById('lc-answered-result').value;
-    document.getElementById('lc-outcome').value = result;
-    nextField.style.display = '';
-    // Show callback picker if 2nd follow up or callback requested
-    const needsCallback = ['2nd Follow Up','Callback Requested'].includes(result);
-    callbackSection.style.display = needsCallback ? '' : 'none';
-  }
-}
-
-// Keep outcome in sync when result dropdown changes
-function syncAnsweredResult(){
-  const result = document.getElementById('lc-answered-result').value;
-  document.getElementById('lc-outcome').value = result;
-  const callbackSection = document.getElementById('callback-datetime-section');
-  const needsCallback = ['2nd Follow Up','Callback Requested'].includes(result);
-  callbackSection.style.display = needsCallback ? '' : 'none';
-  // Default callback to tomorrow 10am when 2nd Follow Up is picked
-  if(needsCallback && !document.getElementById('lc-callback-datetime').value){
-    const tom = new Date(); tom.setDate(tom.getDate()+1); tom.setHours(10,0,0,0);
-    document.getElementById('lc-callback-datetime').value = tom.toISOString().slice(0,16);
-  }
+function pickOutcome(btn){
+  document.querySelectorAll('#lc-outcome-grid .outcome-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const outcome = btn.dataset.outcome;
+  document.getElementById('lc-outcome').value = outcome;
+  const needsCallback = ['2nd Follow Up','Callback Requested','No Answer','Voicemail'].includes(outcome);
+  const cbSection = document.getElementById('callback-datetime-section');
+  if(cbSection) cbSection.style.display = needsCallback ? '' : 'none';
 }
 
 async function submitCallLog(){
@@ -4823,24 +4754,15 @@ async function submitCallLog(){
   const nextAction = document.getElementById('lc-next-action')?.value.trim() || '';
   if(!calledAt){ showToast('Please set the call date/time'); return; }
 
-  // Determine final outcome
-  let outcome;
-  if(!callAnswered){
-    outcome = document.getElementById('lc-notanswered-reason').value; // 'No Answer' or 'Voicemail'
-  } else {
-    outcome = document.getElementById('lc-answered-result').value;
-  }
-  document.getElementById('lc-outcome').value = outcome;
+  // Outcome is set directly by the picked button
+  let outcome = document.getElementById('lc-outcome').value;
 
   const item = CALL_LIST.find(c=>c.id===logCallItemId);
 
   // Get callback datetime if applicable
   let callbackDt = null;
-  if(['2nd Follow Up','Callback Requested'].includes(outcome)){
+  if(['2nd Follow Up','Callback Requested','No Answer','Voicemail'].includes(outcome)){
     const cbVal = document.getElementById('lc-callback-datetime')?.value;
-    if(cbVal) callbackDt = new Date(cbVal).toISOString();
-  } else if(['No Answer','Voicemail'].includes(outcome)){
-    const cbVal = document.getElementById('lc-notanswered-callback')?.value;
     if(cbVal) callbackDt = new Date(cbVal).toISOString();
   }
 
@@ -4852,7 +4774,7 @@ async function submitCallLog(){
     called_at:   new Date(calledAt).toISOString(),
     caller, outcome, notes,
     next_action: nextAction,
-    was_answered: callAnswered,
+    was_answered: !['No Answer','Voicemail'].includes(outcome),
     callback_datetime: callbackDt,
   };
   sync('syncing');
