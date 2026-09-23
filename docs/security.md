@@ -32,7 +32,24 @@ trigger. See [docs/database.md](database.md).
 RLS on every table, with policies calling `is_desk_user()`, `is_desk_admin()`
 and `portal_customer_id()` rather than duplicating logic. `SECURITY DEFINER`
 helpers pin `search_path`, without which a caller can shadow the tables the
-function reads.
+function reads (every `SECURITY DEFINER` function does now, as of
+2026-09-23 — the last two, `set_updated_at` and
+`desk_credit_application_guard`, aren't `SECURITY DEFINER` so didn't carry
+the same risk, but were pinned anyway for consistency).
+
+Every function also has `EXECUTE` explicitly revoked from `anon` (and, for
+ones with no legitimate direct caller at all — internal helpers, trigger
+functions, the daily-reminder cron job — from `authenticated` too) beyond
+what each one's own `is_desk_user()`-style internal check already enforces.
+Postgres grants `EXECUTE` to `PUBLIC` by default on every new function, which
+Supabase's own Security Advisor flags for every `SECURITY DEFINER` function
+that doesn't explicitly narrow it — reviewed and tightened 2026-09-23, down
+from 40 advisor findings to 21. The 21 remaining are the ones this was
+checked against and left alone on purpose: `is_desk_user()`,
+`is_desk_admin()`, `portal_customer_id()` and similar are evaluated *inside*
+RLS policies for `anon` queries too (e.g. confirming an anonymous caller is
+correctly *not* staff), so revoking their `anon` grant would risk breaking
+policy evaluation itself, not just tidying an unused API surface.
 
 ### Authentication
 
@@ -97,16 +114,23 @@ public repository has been scraped.
 
 Being worked through; tracked privately rather than listed here in detail:
 
-- **`esc()` doesn't escape quotes**, and is used inside HTML attributes and
-  `onclick` strings. Customer-supplied text in an attribute can break out of
-  it. Don't put user data in an attribute until this is fixed.
-- **`unsafe-inline` in the CSP**, which is what makes the above exploitable
-  rather than merely broken.
+- **`unsafe-inline` in the CSP** — all four pages are built from inline
+  scripts and inline `onclick` handlers, so removing it means restructuring
+  the pages, not just flipping a header.
 - **The staff allowlist is client-side** and should be enforced in the
-  database.
+  database. (The *real* gate, `is_desk_user()` in Postgres, already is
+  server-side and backs every RLS policy — this is about the config.js
+  allowlist that's currently cosmetic-only.)
 - **Service-role keys** used by out-of-repo tooling, including the scraper
-  being retired, need inventorying and rotating.
-- **Subresource integrity** isn't set on CDN scripts.
+  being retired, need rotating — inventoried as of 2026-09-23, see
+  [docs/secrets-inventory.md](secrets-inventory.md).
+
+Resolved since this list was last written, left here struck through rather
+than silently deleted:
+- ~~`esc()` doesn't escape quotes~~ — fixed; `esc()` now escapes `"` and `'`
+  and is safe inside attributes.
+- ~~Subresource integrity isn't set on CDN scripts~~ — `supabase-js` is
+  pinned with an SRI hash; other CDN scripts still don't carry one.
 
 ## If something is exposed
 
