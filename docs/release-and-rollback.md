@@ -28,6 +28,24 @@ most common way a change appears to work locally and fails live.
 `scripts/check-publish-list.mjs` fails CI when a page references a file that
 isn't published.
 
+## Marking a release (optional, audit trail only)
+
+Pushing a `vX.Y.Z` tag creates a GitHub Release with notes generated from the
+merged PRs since the last tag (`.github/workflows/release.yml`):
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+**This does not gate or change the deploy.** By the time you tag a commit, if
+it's on `master`, Netlify has already published it — merging is still what
+releases. Tagging just gives a clean "what was actually live, and when" record
+instead of reconstructing it from `git log`. Picking the version number is a
+manual call; there's no auto-bump tooling. The *real* tag → approval →
+production gate described below is separate, later work for once staging
+exists — this doesn't bring that forward.
+
 ## Before you merge
 
 - The deploy preview opens and the page you changed actually works
