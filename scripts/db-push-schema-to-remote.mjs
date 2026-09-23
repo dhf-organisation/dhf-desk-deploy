@@ -18,7 +18,7 @@
 //
 // Safety: hard-refuses to run against the production project ref, checked
 // in code, not left to whoever's typing the command to remember.
-import { existsSync, copyFileSync, unlinkSync } from 'node:fs';
+import { existsSync, copyFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
 const PRODUCTION_REF = 'cztpumgrvhmcvvpqbfqo';
@@ -61,6 +61,11 @@ const linkStatus = sh('supabase', ['link', '--project-ref', ref], {
 });
 if (linkStatus !== 0) process.exit(linkStatus);
 
+// supabase/migrations/ isn't tracked by git when empty, so a fresh checkout
+// won't have it on disk -- create it before copying into it (see the same
+// fix and reasoning in db-local-up.mjs, found the hard way when this
+// exact pattern failed on a genuinely fresh CI checkout).
+mkdirSync('supabase/migrations', { recursive: true });
 copyFileSync(SCHEMA_FILE, TEMP_MIGRATION);
 console.log(`\nApplying ${SCHEMA_FILE} to ${ref} via 'supabase db push' …`);
 // db push applies every migration not yet recorded as applied on the target.
