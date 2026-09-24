@@ -6839,16 +6839,7 @@ function openInboundCall(){
   setTimeout(()=>document.getElementById('ib-name').focus(),100);
 }
 function closeInboundCall(){ document.getElementById('inboundCallOverlay').classList.remove('open'); }
-function ibRender(){
-  for(let i=0;i<4;i++){
-    const s=document.getElementById('ib-step-'+i), d=document.getElementById('ib-dot-'+i);
-    if(s) s.classList.toggle('active', i===ibStep);
-    if(d) d.classList.toggle('active', i<=ibStep);
-  }
-  document.getElementById('ib-back').style.display = ibStep===0?'none':'';
-  document.getElementById('ib-next').style.display = ibStep===3?'none':'';
-  document.getElementById('ib-save').style.display = ibStep===3?'':'none';
-}
+function ibRender(){ /* all steps visible now — no step navigation */ }
 function ibNext(){
   if(ibStep===0 && !document.getElementById('ib-name').value.trim()){
     document.getElementById('ib-name').focus();
@@ -6936,7 +6927,7 @@ async function ibSave(){
 .ib-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
 .ib-title{font-size:16px;font-weight:800;color:var(--text)}
 .ib-close{border:none;background:none;font-size:22px;cursor:pointer;color:var(--muted);line-height:1}
-.ib-steps{display:flex;gap:6px;padding:14px 20px 0}
+.ib-steps{display:none}
 .ib-step-dot{flex:1;height:4px;border-radius:2px;background:var(--border);transition:.2s}
 .ib-step-dot.active{background:var(--green)}
 .ib-body{padding:16px 20px}
@@ -6952,8 +6943,8 @@ async function ibSave(){
 .ib-cadence{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .ib-cadence button{border:1px solid var(--border);background:var(--surface);border-radius:14px;padding:5px 12px;font-size:12px;cursor:pointer;color:var(--muted);font-weight:600}
 .ib-cadence button:hover{border-color:var(--green);color:var(--green)}
-.ib-step{display:none}
-.ib-step.active{display:block}
+.ib-step{display:block;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.ib-step:last-child{border-bottom:none}
 .ib-footer{display:flex;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--border);position:sticky;bottom:0;background:var(--surface)}
 .ib-btn{border:none;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer}
 .ib-btn.back{background:var(--bg);color:var(--text)}
@@ -6980,7 +6971,7 @@ async function ibSave(){
     <div class="ib-body">
       <div class="ib-step active" id="ib-step-0">
         <div class="ib-script"><span class="ib-script-label">🗣 Say</span>Thanks for calling DHF Tyres, you're speaking with <b id="ib-script-name">Keenan</b>. How can I help you today?</div>
-        <div class="ib-field"><label>Customer name *</label><input type="text" id="ib-name" placeholder="Customer's name" onkeydown="if(event.key==='Enter')ibNext()"></div>
+        <div class="ib-field"><label>Customer name *</label><input type="text" id="ib-name" placeholder="Customer's name"></div>
         <div class="ib-field"><label>Phone / Caller ID</label><input type="text" id="ib-phone" placeholder="(03) 9xxx xxxx or mobile" oninput="onIbPhoneInput(this)"></div>
         <div class="ib-customer-hint" id="ib-customer-hint"></div>
         <div class="ib-step-note">* required to continue</div>
@@ -7035,10 +7026,8 @@ async function ibSave(){
       </div>
     </div>
     <div class="ib-footer">
-      <button class="ib-btn back" id="ib-back" onclick="ibPrev()" style="display:none">← Back</button>
       <div style="flex:1"></div>
-      <button class="ib-btn next" id="ib-next" onclick="ibNext()">Next →</button>
-      <button class="ib-btn save" id="ib-save" onclick="ibSave()" style="display:none">💾 Save lead</button>
+      <button class="ib-btn save" id="ib-save" onclick="ibSave()">💾 Save lead</button>
     </div>
   </div>
 </div>
