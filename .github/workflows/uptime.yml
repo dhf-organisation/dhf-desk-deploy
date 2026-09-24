@@ -1,0 +1,35 @@
+# Self-healing: an hourly production health probe, independent of any
+# deploy. The existing post-deploy smoke test only runs when master is
+# pushed to, so it can't catch production going down for any other reason
+# (a Supabase/Netlify outage, a manual change elsewhere). This one runs on a
+# schedule and doesn't care why or when it broke.
+name: Uptime
+on:
+  schedule: [{ cron: "0 * * * *" }]   # hourly
+  workflow_dispatch:
+permissions: { issues: write }
+jobs:
+  probe:
+    if: github.repository == 'dhf-organisation/dhf-desk-deploy'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe production
+        env: { GH_TOKEN: "${{ github.token }}", GH_REPO: "${{ github.repository }}" }
+        run: |
+          set -uo pipefail
+          PROD_URL="https://dhf-desk.netlify.app"
+          fails=""
+          for path in "/" "/staff.html" "/portal.html" "/crm.html"; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 "${PROD_URL}${path}" || echo 000)"
+            [ "$code" != "200" ] && fails="${fails}
+          - \`${path}\` → HTTP ${code}"
+          done
+          now="$(date -u +%FT%TZ)"
+          existing="$(gh issue list --state open --label downtime --json number --jq '.[0].number' 2>/dev/null || true)"
+          if [ -n "$fails" ]; then
+            if [ -n "$existing" ]; then gh issue comment "$existing" --body "🔴 Still unhealthy at ${now}:${fails}";
+            else printf 'Health check failed at %s (UTC):%s\n\nAuto-closes on recovery.' "$now" "$fails" | gh issue create --title "Production is unhealthy" --label downtime --body-file -; fi
+          elif [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "✅ Recovered — all endpoints 200 at ${now}. Auto-closing."
+            gh issue close "$existing"
+          fi
