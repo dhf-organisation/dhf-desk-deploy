@@ -2957,15 +2957,16 @@ function makeCard(lead,stage){
       if(['Won','Closed'].includes(stage)) return '';
       const fu = lead.follow_up_date ? new Date(lead.follow_up_date) : null;
       const now = new Date();
+      const fuIcon = isInCallList(lead.id) ? '📞' : '📅';
       if(fu){
         const diff=fu-now;
         const isOverdue=diff<0;
         const isToday=fu.toDateString()===now.toDateString();
         const label=fu.toLocaleString('en-AU',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Australia/Sydney'});
         const cls=isOverdue?'overdue':isToday?'today':'';
-        return `<div class="card-followup-date ${cls}" title="Click to change follow-up date" onclick="event.stopPropagation();openCardFUDate('${lead.id}','${lead.stage||stage}')">📅 ${isOverdue?'⚠ ':''}${label} ✎</div>`;
+        return `<div class="card-followup-date ${cls}" title="Click to change follow-up date" onclick="event.stopPropagation();openCardFUDate('${lead.id}','${lead.stage||stage}')">${fuIcon} ${isOverdue?'⚠ ':''}${label} ✎</div>`;
       } else {
-        return `<div class="card-followup-date-empty" onclick="event.stopPropagation();openCardFUDate('${lead.id}','${lead.stage||stage}')" title="Set follow-up date">📅 Set follow-up date</div>`;
+        return `<div class="card-followup-date-empty" onclick="event.stopPropagation();openCardFUDate('${lead.id}','${lead.stage||stage}')" title="Set follow-up date">${fuIcon} Set follow-up date</div>`;
       }
     })()+
     (lead.notes?`<div class="card-notes">${esc(lead.notes)}</div>`:'')+
