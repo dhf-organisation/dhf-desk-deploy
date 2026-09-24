@@ -1,0 +1,5 @@
+# DHF Desk is a staff/customer operations tool, not public content — keep it
+# out of search indexes rather than let staff login and the customer portal
+# show up in results.
+User-agent: *
+Disallow: /
