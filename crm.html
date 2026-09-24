@@ -3518,9 +3518,8 @@ async function doMove(lead,from,to){
     catch(e){ console.error('reactivate note failed', e); }
   }
 
-  // Auto-add to the calling list when a lead enters a follow-up stage; remove when it's won/closed/lost
-  if(isFollowUpStage(to)) ensureInCallList(updatedLead);
-  else if(to==='Won' || to==='Closed' || to==='Not Ready to Buy') removeLeadFromCallList(lead.id);
+  // Remove from the calling list when a lead is won/closed/lost. (No auto-add — the calling list is manual-only.)
+  if(to==='Won' || to==='Closed' || to==='Not Ready to Buy') removeLeadFromCallList(lead.id);
 
   // When moving to Won, prompt for job details to add to projection
   if(to==='Won'){
@@ -6900,7 +6899,6 @@ async function ibSave(){
     if(DATA[row.stage]) DATA[row.stage].unshift(saved);
     render();
     sync('synced');
-    if(followup) ensureInCallList(saved);
     showToast(`✓ ${name} logged${followup?' · follow-up set':''}`);
     linkLeadToDeskCustomer(saved);
   }catch(e){
