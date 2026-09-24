@@ -1,0 +1,35 @@
+# Self-healing: opens an issue when CI fails on master (a red scheduled run,
+# e.g. the weekly RLS/CodeQL/secrets-scan runs, or an admin-bypass push —
+# a PR failure is already blocked by required checks and doesn't need this),
+# closes it automatically on the next green CI run on master.
+name: CI failure tracker
+on:
+  workflow_run: { workflows: ["CI"], types: [completed], branches: [master] }
+permissions: { issues: write }
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open, update, or close the CI-failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list --state open --label ci-failure --json number --jq '.[0].number' 2>/dev/null || true)"
+          if [ "$CONCLUSION" = "success" ]; then
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --body "✅ Green again on \`${SHA:0:7}\` — ${RUN_URL}. Auto-closing."
+              gh issue close "$existing"
+            fi
+          elif [ "$CONCLUSION" = "failure" ]; then
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --body "🔴 Still failing on \`${SHA:0:7}\` — ${RUN_URL}"
+            else
+              printf 'CI failed on `master` (`%s`).\n\nRun: %s\n\nAuto-closes when CI next passes on master.' "${SHA:0:7}" "$RUN_URL" \
+                | gh issue create --title "CI failing on master" --label ci-failure --body-file -
+            fi
+          fi
