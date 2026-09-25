@@ -1,8 +1,14 @@
 # Perf/a11y/SEO budgets against the live public-facing pages (login/landing
 # screens — staff, staff mobile and portal all require Google/OTP sign-in, so
 # an unauthenticated Lighthouse run audits exactly what an anonymous visitor
-# actually sees, same as any real first-time visitor). Accessibility and SEO
-# are hard-gated; performance and best-practices are warnings only.
+# actually sees, same as any real first-time visitor). Only accessibility is
+# hard-gated; SEO, performance and best-practices are warnings only.
+#
+# SEO is deliberately a warning, not a gate: this app ships its own
+# robots.txt disallowing all crawling (it's a staff/customer tool, not
+# public content), so Lighthouse's "is the page indexable" check will always
+# fail by design — that's correct, not a regression to chase, so it can't be
+# a hard gate without permanently red CI for a choice we made on purpose.
 name: Lighthouse
 on:
   workflow_dispatch:
