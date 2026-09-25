@@ -567,11 +567,7 @@ async function loadCustomerCreditBalance(customerId){
   try{
     const {data,error}=await sb.from('desk_credit_notes').select('status,items:desk_credit_note_items(qty,unit_price),applications:desk_credit_applications(amount)').eq('customer_id',customerId).eq('status','issued');
     if(error)throw error;
-    return (data||[]).reduce((sum,cn)=>{
-      const total=(cn.items||[]).reduce((s,it)=>s+Number(it.qty)*Number(it.unit_price),0);
-      const applied=(cn.applications||[]).reduce((s,a)=>s+Number(a.amount),0);
-      return sum+Math.max(0,total-applied);
-    },0);
+    return (data||[]).reduce((sum,cn)=>sum+Math.max(0,creditNoteTotal(cn)-creditNoteApplied(cn)),0);
   }catch(e){return 0}
 }
 
@@ -2212,7 +2208,7 @@ async function renderPoDetail(id){
   const po=purchaseOrders.find(x=>x.id===id);
   if(!po){selectedPoId=null;renderPoList();return}
   await loadPoItems(id);
-  const total=poItems.reduce((s,it)=>s+Number(it.qty)*Number(it.unit_cost),0);
+  const total=poTotal({items:poItems});
   let h=`<button class="back-link" onclick="backFromPoDetail()">← All purchase orders</button>
   <div class="panel" style="max-width:800px">
     <div class="panel-head">
@@ -2976,8 +2972,8 @@ async function renderCreditNoteDetail(id){
   await Promise.all([loadCreditNoteItems(id),loadCreditApplications(id),loadStockItems()]);
   const cn=creditNotes.find(x=>x.id===id);
   if(!cn){selectedCreditNoteId=null;renderCreditNoteList();return}
-  const total=creditNoteItems.reduce((s,it)=>s+Number(it.qty)*Number(it.unit_price),0);
-  const applied=creditApplications.reduce((s,a)=>s+Number(a.amount),0);
+  const total=creditNoteTotal({items:creditNoteItems});
+  const applied=creditNoteApplied({applications:creditApplications});
   const remaining=cn.status==='issued'?Math.max(0,total-applied):0;
   let h=`<button class="back-link" onclick="backFromCreditNoteDetail()">← All credit notes</button>
   <div class="panel" style="max-width:800px">
