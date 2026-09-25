@@ -1,0 +1,74 @@
+name: Lighthouse (PR preview)
+
+# The weekly `lighthouse.yml` audits production on a schedule — useful for
+# noticing drift, but it can only tell you *after* a regression has already
+# shipped. This runs the same budgets against the PR's own Netlify deploy
+# preview, so a regression is visible on the PR before it merges. Same
+# config (.github/lighthouserc.json), same policy: accessibility is a hard
+# gate (score < 0.95 fails the job), performance/SEO/best-practices are
+# warnings only — see lighthouse.yml's own header comment for why SEO in
+# particular is a warning (a deliberate robots.txt disallow, not a bug).
+#
+# Only runs when a page or a file that could affect one of these budgets
+# actually changed — a docs- or script-only PR doesn't need a Lighthouse run.
+#
+# The preview URL is Netlify's own deterministic naming
+# (deploy-preview-<PR#>--dhf-desk.netlify.app) — no Netlify API call needed
+# to find it. Netlify's own build runs as an independent check on the same
+# PR, so this polls for the preview to actually be live before auditing it,
+# the same wait-and-retry shape post-deploy-smoke.yml uses for production.
+
+on:
+  pull_request:
+    paths:
+      - "index.html"
+      - "staff.html"
+      - "portal.html"
+      - "crm.html"
+      - "auth.js"
+      - "app-main.js"
+      - "tokens.css"
+      - "config.js"
+      - "_headers"
+      - "manifest.json"
+      - ".github/lighthouserc.json"
+      - ".github/workflows/lighthouse-pr.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lighthouse-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    env:
+      PREVIEW_URL: https://deploy-preview-${{ github.event.pull_request.number }}--dhf-desk.netlify.app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Wait for the deploy preview to be live
+        run: |
+          for attempt in $(seq 1 20); do
+            if curl -sf -o /dev/null "$PREVIEW_URL/"; then
+              echo "Preview is live: $PREVIEW_URL"
+              exit 0
+            fi
+            echo "Attempt $attempt: preview not ready yet, waiting 15s…"
+            sleep 15
+          done
+          echo "Preview never came up at $PREVIEW_URL — failing rather than auditing a stale/empty page."
+          exit 1
+
+      - uses: treosh/lighthouse-ci-action@3e7e23fb74242897f95c0ba9cabad3d0227b9b18 # v12
+        with:
+          urls: |
+            ${{ env.PREVIEW_URL }}/
+            ${{ env.PREVIEW_URL }}/staff.html
+            ${{ env.PREVIEW_URL }}/portal.html
+            ${{ env.PREVIEW_URL }}/crm.html
+          configPath: ./.github/lighthouserc.json
+          uploadArtifacts: true
+          temporaryPublicStorage: true
