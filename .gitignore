@@ -10,3 +10,6 @@ dist/
 # scripts/db-pull-schema.mjs and docs/environments.md.
 supabase/.local-schema.sql
 supabase/.env
+
+# Personal Claude Code permission overrides — machine-local, never shared.
+.claude/settings.local.json
