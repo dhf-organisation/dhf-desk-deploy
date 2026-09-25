@@ -240,7 +240,7 @@ async function runQuickSearch(rawTerm){
       html+=`<div class="quick-search-item" onclick="quickSearchGoCustomer('${v.customer_id}')"><div class="quick-search-item-type">Vehicle</div>${esc(vehLabel||'Vehicle')}${v.customer?.name?' · '+esc(v.customer.name):''}</div>`;
     });
     (jobRes.data||[]).forEach(j=>{html+=`<div class="quick-search-item" onclick="quickSearchGoJob('${j.id}')"><div class="quick-search-item-type">Job</div>${esc(j.job_type)}${j.order_no?' · Order '+esc(j.order_no):''}${j.customer?.name?' · '+esc(j.customer.name):''}</div>`});
-    (invRes.data||[]).forEach(i=>{html+=`<div class="quick-search-item" onclick="quickSearchGoInvoice('${i.id}','${i.doc_type}')"><div class="quick-search-item-type">${i.doc_type==='quote'?'Quote':'Invoice'}</div>${docPrefix(i.doc_type)}-${i.invoice_no}${i.order_no?' · Order '+esc(i.order_no):''}${i.customer?.name?' · '+esc(i.customer.name):''}</div>`});
+    (invRes.data||[]).forEach(i=>{html+=`<div class="quick-search-item" onclick="quickSearchGoInvoice('${i.id}',${jsArg(i.doc_type)})"><div class="quick-search-item-type">${i.doc_type==='quote'?'Quote':'Invoice'}</div>${docPrefix(i.doc_type)}-${i.invoice_no}${i.order_no?' · Order '+esc(i.order_no):''}${i.customer?.name?' · '+esc(i.customer.name):''}</div>`});
     (supRes.data||[]).forEach(r=>{
       const label=r.size||r.stripped_size||'—';
       const detail=[r.brand,r.model].filter(Boolean).join(' ');
@@ -250,7 +250,7 @@ async function runQuickSearch(rawTerm){
       const flags=r.is_discontinued?' · Discontinued':'';
       const meta=[supplier,price,qty].filter(Boolean).join(' · ');
       const searchArg=esc(rawTerm);
-      html+=`<div class="quick-search-item" onclick="quickSearchGoSupplierStock('${searchArg}')"><div class="quick-search-item-type">Supplier Stock</div>${esc(label)}${detail?' · '+esc(detail):''}${flags}<br><span style="font-size:12px;color:var(--text-secondary)">${esc(meta)}</span></div>`;
+      html+=`<div class="quick-search-item" onclick="quickSearchGoSupplierStock(${jsArg(searchArg)})"><div class="quick-search-item-type">Supplier Stock</div>${esc(label)}${detail?' · '+esc(detail):''}${flags}<br><span style="font-size:12px;color:var(--text-secondary)">${esc(meta)}</span></div>`;
     });
     results.innerHTML=html||'<div class="quick-search-item" style="color:var(--text-secondary)">No matches</div>';
   }catch(e){results.innerHTML='<div class="quick-search-item" style="color:var(--text-secondary)">Search failed</div>'}
@@ -361,6 +361,14 @@ function esc(s){const d=document.createElement('div');d.textContent=s==null?'':S
 // JSON.stringify handles the JS layer (quotes, backslashes, newlines); the
 // replaces handle the HTML layer, and decoding them yields exactly the JSON
 // literal again.
+//
+// INVARIANT: the only values still interpolated raw as onclick="fn('${x}')"
+// (no jsArg()) are UUID record ids — nothing that needs escaping can appear
+// in one. If a handler ever needs a non-id value in this position (a status,
+// a stage, a slug, anything not a UUID from the database), it MUST go
+// through jsArg(), not a bare '${...}'. See the 2026-09-25 cleanup that
+// converted every non-id site (Trello: "~100 handlers interpolate record ids
+// straight into onclick strings").
 function jsArg(v){return JSON.stringify(v==null?'':String(v)).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function truncate(s,n){return s&&s.length>n?s.slice(0,n-1).trimEnd()+'…':(s||'')}
 function closeModal(){document.querySelectorAll('.modal-overlay').forEach(o=>o.remove())}
@@ -983,7 +991,7 @@ function renderMessagesPage(){
               <div class="message-row-preview">${esc((m.body||'').replace(/<[^>]+>/g,' '))}</div>
               ${(m.job||m.invoice)?`<div class="message-row-links">
                 ${m.job?`<span class="btn-link" onclick="quickSearchGoJob('${m.job_id}')">${esc(m.job.job_type)}</span>`:''}
-                ${m.invoice?`<span class="btn-link" onclick="openInvoiceFromJob('${m.invoice_id}','${m.invoice.doc_type||'invoice'}')">${docPrefix(m.invoice.doc_type)}-${m.invoice.invoice_no}</span>`:''}
+                ${m.invoice?`<span class="btn-link" onclick="openInvoiceFromJob('${m.invoice_id}',${jsArg(m.invoice.doc_type||'invoice')})">${docPrefix(m.invoice.doc_type)}-${m.invoice.invoice_no}</span>`:''}
               </div>`:''}
             </div>
             <div style="text-align:right">
@@ -1187,7 +1195,7 @@ function renderChatsPage(){
       </div>
       <div class="status-tabs chat-filter-tabs">
         <div class="status-tab chat-filter-tab-all ${chatChannelFilter==='all'?'active':''}" onclick="switchChatFilter('all')">All</div>
-        ${filterTabs.filter(f=>f!=='all').map(f=>{const m=CHAT_CHANNELS[f];return `<div class="chat-filter-tab-icon ${m.cls} ${chatChannelFilter===f?'active':''}" onclick="switchChatFilter('${f}')" title="${esc(m.label)}"><svg viewBox="${m.vb}" aria-hidden="true">${m.icon}</svg></div>`;}).join('')}
+        ${filterTabs.filter(f=>f!=='all').map(f=>{const m=CHAT_CHANNELS[f];return `<div class="chat-filter-tab-icon ${m.cls} ${chatChannelFilter===f?'active':''}" onclick="switchChatFilter(${jsArg(f)})" title="${esc(m.label)}"><svg viewBox="${m.vb}" aria-hidden="true">${m.icon}</svg></div>`;}).join('')}
       </div>
       <div class="chat-thread-list">
         ${threads.length?threads.map(t=>{
@@ -1746,7 +1754,7 @@ function stockInclFromExcl(excl){return excl!==''&&excl!=null&&!isNaN(excl)?(Num
 function stockGstPairInputsHtml(prefix,exclVal){
   return `<div class="form-row-2">
     <div><label class="form-label">${prefix==='sf-buy'?'Buy Price Excl. GST':'Custom And Duty'}</label>
-      <input class="form-input" type="number" step="0.01" id="${prefix}-excl" value="${exclVal}" oninput="onStockGstPairInput('${prefix}')"></div>
+      <input class="form-input" type="number" step="0.01" id="${prefix}-excl" value="${exclVal}" oninput="onStockGstPairInput(${jsArg(prefix)})"></div>
     <div><label class="form-label">Incl. GST</label>
       <input class="form-input form-input-computed" id="${prefix}-incl" value="${stockInclFromExcl(exclVal)}" readonly tabindex="-1"></div>
   </div>`;
@@ -2138,7 +2146,7 @@ function renderPoList(){
   const list=filteredPos();
   let h=inventoryTabBar();
   h+=`<div class="status-tabs">
-    ${['all',...Object.keys(PO_STATUS_LABELS)].map(s=>`<button class="status-tab ${poStatusFilter===s?'active':''}" onclick="setPoFilter('${s}')">${s==='all'?'All':PO_STATUS_LABELS[s]}</button>`).join('')}
+    ${['all',...Object.keys(PO_STATUS_LABELS)].map(s=>`<button class="status-tab ${poStatusFilter===s?'active':''}" onclick="setPoFilter(${jsArg(s)})">${s==='all'?'All':PO_STATUS_LABELS[s]}</button>`).join('')}
   </div>
   <div class="toolbar"><button class="btn-primary" onclick="openNewPoModal()">+ New Purchase Order</button></div>`;
   if(!list.length){
@@ -2224,7 +2232,7 @@ async function renderPoDetail(id){
       <span class="status-badge ${po.status==='received'?'finished':po.status==='cancelled'?'on_hold':'draft'}">${PO_STATUS_LABELS[po.status]}</span>
     </div>
     <div class="job-status-actions">
-      ${Object.keys(PO_STATUS_LABELS).map(s=>`<button class="${s===po.status?'current':''}" ${s===po.status?'disabled':''} onclick="setPoStatus('${po.id}','${s}')">${PO_STATUS_LABELS[s]}</button>`).join('')}
+      ${Object.keys(PO_STATUS_LABELS).map(s=>`<button class="${s===po.status?'current':''}" ${s===po.status?'disabled':''} onclick="setPoStatus('${po.id}',${jsArg(s)})">${PO_STATUS_LABELS[s]}</button>`).join('')}
     </div>
     <div class="field-row"><span class="field-label">Supplier</span><span class="field-val">${esc(po.supplier?.name||'—')}</span></div>
     <div class="field-row"><span class="field-label">Order date</span><span class="field-val">${fmtDate(po.order_date)}</span></div>
@@ -2519,7 +2527,7 @@ function renderPaymentsList(){
     h+=`<div style="margin-bottom:var(--space-3);font-size:13px"><button class="btn-link" onclick="clearPaymentsDrilldown()">← All days</button> &nbsp;<strong>${fmtDate(paymentsDrilldownDate)}</strong></div>`;
     h+='<div class="list-card">';
     dayList.forEach(p=>{
-      h+=`<div class="list-row" onclick="openInvoiceFromJob('${p.invoice_id}','${p.invoice?.doc_type||'invoice'}')">
+      h+=`<div class="list-row" onclick="openInvoiceFromJob('${p.invoice_id}',${jsArg(p.invoice?.doc_type||'invoice')})">
         <div class="list-row-name" style="flex:1">${docPrefix(p.invoice?.doc_type)}-${esc(p.invoice?.invoice_no||'')} · ${esc(p.invoice?.customer?.name||'Unknown')}</div>
         <span class="status-badge draft">${PAYMENT_METHOD_LABELS[p.method]}</span>
         <div class="list-row-sub" style="font-weight:700">$${Number(p.amount).toFixed(2)}</div>
@@ -2531,7 +2539,7 @@ function renderPaymentsList(){
       activeMethods.map(m=>`<th style="text-align:right">${PAYMENT_METHOD_LABELS[m]}</th>`).join('')+
       '<th style="text-align:right">Total</th></tr></thead><tbody>';
     dailyRows.forEach(row=>{
-      h+=`<tr class="clickable-row" onclick="showPaymentsDrilldown('${row.date}')"><td>${fmtDate(row.date)}</td>`;
+      h+=`<tr class="clickable-row" onclick="showPaymentsDrilldown(${jsArg(row.date)})"><td>${fmtDate(row.date)}</td>`;
       activeMethods.forEach(m=>{h+=`<td style="text-align:right">${row.methods[m]?'$'+row.methods[m].toFixed(2):'—'}</td>`});
       h+=`<td style="text-align:right;font-weight:700">$${row.total.toFixed(2)}</td></tr>`;
     });
@@ -2617,7 +2625,7 @@ function renderBillList(){
   const list=filteredBills();
   let h=invoicesTabBar();
   h+=`<div class="status-tabs">
-    ${['all',...Object.keys(BILL_STATUS_LABELS)].map(s=>`<button class="status-tab ${billStatusFilter===s?'active':''}" onclick="setBillFilter('${s}')">${s==='all'?'All':BILL_STATUS_LABELS[s]}</button>`).join('')}
+    ${['all',...Object.keys(BILL_STATUS_LABELS)].map(s=>`<button class="status-tab ${billStatusFilter===s?'active':''}" onclick="setBillFilter(${jsArg(s)})">${s==='all'?'All':BILL_STATUS_LABELS[s]}</button>`).join('')}
   </div>
   <div class="toolbar"><button class="btn-primary" onclick="openNewBillModal()">+ New Bill</button></div>`;
   if(!list.length){
@@ -2720,7 +2728,7 @@ async function renderBillDetail(id){
       <span class="status-badge ${b.status==='paid'?'finished':b.status==='awaiting_payment'?'in_progress':'draft'}">${BILL_STATUS_LABELS[b.status]}</span>
     </div>
     <div class="job-status-actions">
-      ${Object.keys(BILL_STATUS_LABELS).map(s=>`<button class="${s===b.status?'current':''}" ${s===b.status?'disabled':''} onclick="setBillStatus('${b.id}','${s}')">${BILL_STATUS_LABELS[s]}</button>`).join('')}
+      ${Object.keys(BILL_STATUS_LABELS).map(s=>`<button class="${s===b.status?'current':''}" ${s===b.status?'disabled':''} onclick="setBillStatus('${b.id}',${jsArg(s)})">${BILL_STATUS_LABELS[s]}</button>`).join('')}
     </div>
     <div style="display:flex;gap:var(--space-2);margin-bottom:var(--space-4)">
       <button class="btn-primary" onclick="openRecordBillPaymentModal('${b.id}',${balance})">Record Payment</button>
@@ -2845,7 +2853,7 @@ function renderCreditNoteList(){
   const list=filteredCreditNotes();
   let h=invoicesTabBar();
   h+=`<div class="status-tabs">
-    ${['all',...Object.keys(CREDIT_NOTE_STATUS_LABELS)].map(s=>`<button class="status-tab ${creditNoteStatusFilter===s?'active':''}" onclick="setCreditNoteFilter('${s}')">${s==='all'?'All':CREDIT_NOTE_STATUS_LABELS[s]}</button>`).join('')}
+    ${['all',...Object.keys(CREDIT_NOTE_STATUS_LABELS)].map(s=>`<button class="status-tab ${creditNoteStatusFilter===s?'active':''}" onclick="setCreditNoteFilter(${jsArg(s)})">${s==='all'?'All':CREDIT_NOTE_STATUS_LABELS[s]}</button>`).join('')}
   </div>
   <div class="toolbar"><button class="btn-primary" onclick="openNewCreditNoteModal()">+ New Credit Note</button></div>`;
   if(!list.length){
@@ -2990,7 +2998,7 @@ async function renderCreditNoteDetail(id){
       <span class="status-badge ${creditNoteBadgeClass(cn.status)}">${CREDIT_NOTE_STATUS_LABELS[cn.status]}</span>
     </div>
     <div class="job-status-actions">
-      ${Object.keys(CREDIT_NOTE_STATUS_LABELS).map(s=>`<button class="${s===cn.status?'current':''}" ${s===cn.status?'disabled':''} onclick="setCreditNoteStatus('${cn.id}','${s}')">${CREDIT_NOTE_STATUS_LABELS[s]}</button>`).join('')}
+      ${Object.keys(CREDIT_NOTE_STATUS_LABELS).map(s=>`<button class="${s===cn.status?'current':''}" ${s===cn.status?'disabled':''} onclick="setCreditNoteStatus('${cn.id}',${jsArg(s)})">${CREDIT_NOTE_STATUS_LABELS[s]}</button>`).join('')}
     </div>
     ${cn.status==='issued'?`<div style="display:flex;gap:var(--space-2);margin-bottom:var(--space-4)"><button class="btn-primary" onclick="openApplyCreditModal('${cn.id}',${remaining})" ${remaining<=0?'disabled':''}>💳 Apply / Refund Credit</button></div>`:''}
     <div class="field-row"><span class="field-label">Customer</span><span class="field-val">${esc(cn.customer?.name||'—')}</span></div>
@@ -3322,11 +3330,11 @@ function renderInvoiceList(){
   const list=filteredInvoices();
   let h=invoicesTabBar();
   h+=`<div class="status-tabs">
-    ${statusOptions.map(s=>`<button class="status-tab ${invoiceStatusFilter===s?'active':''}" onclick="setInvoiceFilter('${s}')">${s==='all'?'All':DOC_STATUS_LABELS[s]}</button>`).join('')}
+    ${statusOptions.map(s=>`<button class="status-tab ${invoiceStatusFilter===s?'active':''}" onclick="setInvoiceFilter(${jsArg(s)})">${s==='all'?'All':DOC_STATUS_LABELS[s]}</button>`).join('')}
   </div>
   <div class="toolbar">
     <input class="search-input" id="invoice-search" placeholder="Search by number or customer…" value="${esc(invoiceSearchTerm)}" oninput="onInvoiceSearch(this.value)">
-    <button class="btn-primary" onclick="openNewInvoiceModal('${docType}')">+ New ${docType==='quote'?'Quote':'Invoice'}</button>
+    <button class="btn-primary" onclick="openNewInvoiceModal(${jsArg(docType)})">+ New ${docType==='quote'?'Quote':'Invoice'}</button>
   </div>`;
   if(!list.length){
     h+=`<div class="list-card"><div class="list-empty">${invoices.length?'No matches.':`No ${docType}s yet — create one, or make one from a Job Card.`}</div></div>`;
@@ -3544,7 +3552,7 @@ async function buildInvoicePanelHtml(id){
       <span class="status-badge ${inv.status}">${DOC_STATUS_LABELS[inv.status]}</span>
     </div>
     <div class="job-status-actions">
-      ${docStatusOrder(docType).map(s=>`<button class="${s===inv.status?'current':''}" ${s===inv.status?'disabled':''} onclick="setInvoiceStatus('${inv.id}','${s}')">${DOC_STATUS_LABELS[s]}</button>`).join('')}
+      ${docStatusOrder(docType).map(s=>`<button class="${s===inv.status?'current':''}" ${s===inv.status?'disabled':''} onclick="setInvoiceStatus('${inv.id}',${jsArg(s)})">${DOC_STATUS_LABELS[s]}</button>`).join('')}
     </div>
     ${isQuote?(inv.converted_invoice_id?`<div style="margin-bottom:var(--space-4)"><span class="tag-option" onclick="viewRelatedInvoice('${inv.converted_invoice_id}')">→ Converted to INV-${(invoices.find(x=>x.id===inv.converted_invoice_id)||{}).invoice_no||''}</span></div>`:`<div style="margin-bottom:var(--space-4)"><button class="btn-secondary" onclick="convertQuoteToInvoice('${inv.id}')">Convert to Invoice</button></div>`):''}
     <div style="display:flex;gap:var(--space-2);margin-bottom:var(--space-4);flex-wrap:wrap">
@@ -4794,7 +4802,7 @@ function renderSupplierStockList(){
   let h=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:var(--space-3);margin-bottom:var(--space-3)">
     <div class="status-tabs" style="margin-bottom:0">
       <button class="status-tab ${supplierStockSupplierFilter==='all'?'active':''}" onclick="switchSupplierStockFilter('all')">All (${supplierStockRows.length})</button>
-      ${suppliersPresent.map(s=>`<button class="status-tab ${supplierStockSupplierFilter===s?'active':''}" onclick="switchSupplierStockFilter('${s}')">${esc(SUPPLIER_STOCK_LABELS[s]||s)} (${supplierStockRows.filter(r=>r.supplier===s).length})</button>`).join('')}
+      ${suppliersPresent.map(s=>`<button class="status-tab ${supplierStockSupplierFilter===s?'active':''}" onclick="switchSupplierStockFilter(${jsArg(s)})">${esc(SUPPLIER_STOCK_LABELS[s]||s)} (${supplierStockRows.filter(r=>r.supplier===s).length})</button>`).join('')}
     </div>
     <input class="form-input" id="supplier-stock-search" style="max-width:280px" placeholder="Search size, brand, model, SKU…" value="${esc(supplierStockSearchTerm)}" oninput="onSupplierStockSearch(this.value)">
   </div>
@@ -5126,7 +5134,7 @@ function reportsNavHtml(){
     <div class="reports-nav-group">
       <div class="reports-nav-group-title">${esc(cat.label)}</div>
       ${Object.entries(cat.reports).map(([key,label])=>
-        `<button class="reports-nav-link ${reportsCategory===catKey&&reportsActive===key?'active':''}" onclick="selectReport('${catKey}','${key}')">${esc(label)}</button>`
+        `<button class="reports-nav-link ${reportsCategory===catKey&&reportsActive===key?'active':''}" onclick="selectReport(${jsArg(catKey)},${jsArg(key)})">${esc(label)}</button>`
       ).join('')}
     </div>`).join('');
 }
@@ -7251,7 +7259,7 @@ async function renderJobDetail(id){
     <div class="panel">
       <div class="panel-head"><div class="panel-title">${esc(j.job_type)}</div><span class="status-badge ${j.status}">${JOB_STATUS_LABELS[j.status]}</span></div>
       <div class="job-status-actions">
-        ${JOB_STATUS_ORDER.map(s=>`<button class="${s===j.status?'current':''}" ${s===j.status?'disabled':''} onclick="setJobStatus('${j.id}','${s}')">${JOB_STATUS_LABELS[s]}</button>`).join('')}
+        ${JOB_STATUS_ORDER.map(s=>`<button class="${s===j.status?'current':''}" ${s===j.status?'disabled':''} onclick="setJobStatus('${j.id}',${jsArg(s)})">${JOB_STATUS_LABELS[s]}</button>`).join('')}
       </div>
       ${renderChecklistSection(j.id)}
       <label class="form-label">Customer status note <span style="font-weight:400;color:var(--text-secondary);text-transform:none;letter-spacing:0">— shown to the customer in the tracking portal, e.g. why a job is on hold</span></label>
@@ -7354,7 +7362,7 @@ function renderChecklistSection(jobId){
           <input type="checkbox" id="jchk-${c.id}" ${c.is_complete?'checked':''} onchange="toggleJobChecklistItem('${c.id}',this.checked,'${jobId}')">
           <label for="jchk-${c.id}">${esc(c.label)}${c.is_complete&&c.completed_by?` <span style="color:var(--text-muted);font-size:11px">· ${esc(c.completed_by)}</span>`:''}</label>
           <span class="job-checklist-uploads">
-            ${(jobChecklistUploads[c.id]||[]).map(u=>`<span class="job-checklist-upload">${u.isImage&&u.url?`<a href="${u.url}" target="_blank" rel="noopener" title="${esc(u.file_name)}"><img class="job-checklist-thumb" src="${u.url}" alt="${esc(u.file_name)}"></a>`:`<a class="job-checklist-file" href="${u.url}" target="_blank" rel="noopener" title="${esc(u.file_name)}">📄 ${esc(u.file_name)}</a>`}<button class="job-checklist-upload-del" title="Delete file" onclick="deleteChecklistUpload('${u.id}','${u.file_path}','${jobId}')">✕</button></span>`).join('')}
+            ${(jobChecklistUploads[c.id]||[]).map(u=>`<span class="job-checklist-upload">${u.isImage&&u.url?`<a href="${u.url}" target="_blank" rel="noopener" title="${esc(u.file_name)}"><img class="job-checklist-thumb" src="${u.url}" alt="${esc(u.file_name)}"></a>`:`<a class="job-checklist-file" href="${u.url}" target="_blank" rel="noopener" title="${esc(u.file_name)}">📄 ${esc(u.file_name)}</a>`}<button class="job-checklist-upload-del" title="Delete file" onclick="deleteChecklistUpload('${u.id}',${jsArg(u.file_path)},'${jobId}')">✕</button></span>`).join('')}
             <label class="job-checklist-upload-btn" title="Add photo or file">📷<input type="file" accept="image/*,application/pdf" style="display:none" onchange="onChecklistItemUpload('${c.id}','${jobId}',this)"></label>
           </span>
         </div>`).join(''):'<div style="font-size:12px;color:var(--text-secondary);padding:var(--space-2) 0">No checklist on this job — check sheets are copied from the job type when a job is created (Settings → Job Types → Check sheet).</div>'}
@@ -8616,9 +8624,9 @@ function showDayContextMenu(x,y,dateStr){
   if(y+menuHeight>window.innerHeight)y=window.innerHeight-menuHeight-10;
   const html=`<div class="day-context-backdrop" onclick="closeDayContextMenu()"></div>
     <div class="day-context-menu" style="left:${x}px;top:${y}px">
-      ${isFull?'<div class="locked-note">This day is marked full</div>':`<button onclick="closeDayContextMenu();openNewJobModal('${dateStr}')">+ Add Job</button>`}
-      <button onclick="closeDayContextMenu();openDayNoteForm('${dateStr}')">+ Add Note</button>
-      <button class="${isFull?'':'danger'}" onclick="toggleDayFull('${dateStr}')">${isFull?'Unmark day as full':'Mark day as full'}</button>
+      ${isFull?'<div class="locked-note">This day is marked full</div>':`<button onclick="closeDayContextMenu();openNewJobModal(${jsArg(dateStr)})">+ Add Job</button>`}
+      <button onclick="closeDayContextMenu();openDayNoteForm(${jsArg(dateStr)})">+ Add Note</button>
+      <button class="${isFull?'':'danger'}" onclick="toggleDayFull(${jsArg(dateStr)})">${isFull?'Unmark day as full':'Mark day as full'}</button>
     </div>`;
   document.body.insertAdjacentHTML('beforeend',html);
 }
@@ -8635,7 +8643,7 @@ function openDayNoteForm(dateStr){
       <textarea class="form-textarea" id="day-note-body" placeholder="Note…" style="min-height:100px"></textarea>
       <div class="form-actions">
         <button class="btn-secondary" onclick="closeModal()">Cancel</button>
-        <button class="btn-primary" onclick="saveDayNote('${dateStr}')">Save</button>
+        <button class="btn-primary" onclick="saveDayNote(${jsArg(dateStr)})">Save</button>
       </div>
     </div>
   </div>`;
@@ -8711,7 +8719,7 @@ function hoistDayPickerHtml(){
   for(let i=0;i<7;i++){
     const d=new Date(weekStart);d.setDate(d.getDate()+i);
     const active=sameLocalDate(d,diaryDayDate),isToday=sameLocalDate(d,today);
-    out+=`<button class="${active?'active':''}${isToday?' today':''}" onclick="setDiaryDay('${isoDateOnly(d)}')">${d.toLocaleDateString('en-AU',{weekday:'short'})} ${d.getDate()}</button>`;
+    out+=`<button class="${active?'active':''}${isToday?' today':''}" onclick="setDiaryDay(${jsArg(isoDateOnly(d))})">${d.toLocaleDateString('en-AU',{weekday:'short'})} ${d.getDate()}</button>`;
   }
   return out+'</div>';
 }
@@ -8778,7 +8786,7 @@ function renderDiaryWeekGrid(){
       <div class="diary-day-header${isToday?' today':''}">${d.toLocaleDateString('en-AU',{weekday:'short'})}<br>${d.toLocaleDateString('en-AU',{day:'numeric',month:'short'})}</div>
       ${isFull?'<div class="day-full-badge">FULL — LOCKED</div>':''}
       ${isFull?'':diaryAvailStripHtml(dateStr)}
-      <div class="diary-day-body${isFull?' day-full':''}" id="diary-day-body-${dateStr}" onclick="onDayBodyClick(event,'${dateStr}')" ondragover="onDiaryDragOver(event)" ondragleave="onDiaryDragLeave(event)" ondrop="onDiaryDrop(event,'${dateStr}')">
+      <div class="diary-day-body${isFull?' day-full':''}" id="diary-day-body-${dateStr}" onclick="onDayBodyClick(event,${jsArg(dateStr)})" ondragover="onDiaryDragOver(event)" ondragleave="onDiaryDragLeave(event)" ondrop="onDiaryDrop(event,${jsArg(dateStr)})">
         ${diaryDayBodyContentHtml(d,dateStr)}
       </div>
     </div>`;
@@ -8919,7 +8927,7 @@ function diaryAvailStripHtml(dateStr){
     const s=divSlots.reduce((a,b)=>a.startHour<b.startHour?a:b);
     const hh=Math.floor(s.startHour),mm=Math.round((s.startHour-hh)*60);
     const timeLabel=new Date(y,m-1,dd,hh,mm).toLocaleTimeString('en-AU',{hour:'numeric',minute:'2-digit'});
-    return `<button class="diary-avail-chip" title="${fullLabel} — earliest free slot" onclick="openNewJobModal('${dateStr}',{time:'${hoursToHhmm(s.startHour)}',division:'${division}',bay:'${s.bay}'})">${shortLabel} ${esc(s.label)} · ${timeLabel}</button>`;
+    return `<button class="diary-avail-chip" title="${fullLabel} — earliest free slot" onclick="openNewJobModal(${jsArg(dateStr)},{time:${jsArg(hoursToHhmm(s.startHour))},division:${jsArg(division)},bay:${jsArg(s.bay)}})">${shortLabel} ${esc(s.label)} · ${timeLabel}</button>`;
   };
   return `<div class="diary-avail">${chipFor('tyre_shop','TS','Tyre Shop')}${chipFor('workshop','WS','Workshop')}</div>`;
 }
@@ -9062,8 +9070,8 @@ function renderHoistDayView(){
     <button class="btn-secondary" onclick="diaryToday()">Today</button>
     <button class="btn-secondary" onclick="diaryNextWeek()">Next →</button>
     ${diaryViewToggleHtml()}
-    <button class="btn-secondary" onclick="openBlockOutModal(null,'${dateStr}')">+ Block out</button>
-    <button class="btn-primary" onclick="openNewJobModal('${dateStr}')">+ New Job</button>
+    <button class="btn-secondary" onclick="openBlockOutModal(null,${jsArg(dateStr)})">+ Block out</button>
+    <button class="btn-primary" onclick="openNewJobModal(${jsArg(dateStr)})">+ New Job</button>
   </div>`;
 
   h+=hoistDayPickerHtml();
@@ -9129,7 +9137,7 @@ function renderHoistDayView(){
       const blockOutsHere=blockOuts.filter(b=>b.block_date===dateStr&&b.division===div&&b.bay===hh.bay);
       h+=`<div class="hoist-col">
         <div class="hoist-col-header">${esc(hh.label)}</div>
-        <div class="hoist-lane" style="height:${gridHeight}px" onclick="onHoistLaneClick(event,this,'${div}','${hh.bay}','${dateStr}')" onmousemove="onHoistLaneHover(event,this,'${div}','${hh.bay}','${dateStr}')" onmouseleave="onHoistLaneLeave(this)" ondragover="onDiaryDragOver(event)" ondragleave="onDiaryDragLeave(event)" ondrop="onHoistDrop(event,'${div}','${hh.bay}','${dateStr}')">
+        <div class="hoist-lane" style="height:${gridHeight}px" onclick="onHoistLaneClick(event,this,${jsArg(div)},${jsArg(hh.bay)},${jsArg(dateStr)})" onmousemove="onHoistLaneHover(event,this,${jsArg(div)},${jsArg(hh.bay)},${jsArg(dateStr)})" onmouseleave="onHoistLaneLeave(this)" ondragover="onDiaryDragOver(event)" ondragleave="onDiaryDragLeave(event)" ondrop="onHoistDrop(event,${jsArg(div)},${jsArg(hh.bay)},${jsArg(dateStr)})">
           ${hourRulesHtml}
           <div class="hoist-book-ghost"></div>
           <div class="hoist-blockout-ghost"></div>
@@ -9184,7 +9192,7 @@ function renderHoistDayView(){
       <strong>Block out</strong>
       <span>Drag onto a hoist</span>
     </div>
-    <div class="hoist-unassigned-body" ondragover="onDiaryDragOver(event)" ondragleave="onDiaryDragLeave(event)" ondrop="onHoistUnassignDrop(event,'${dateStr}')">
+    <div class="hoist-unassigned-body" ondragover="onDiaryDragOver(event)" ondragleave="onDiaryDragLeave(event)" ondrop="onHoistUnassignDrop(event,${jsArg(dateStr)})">
       ${unassigned.length?unassigned.map(j=>{
         const contact=j.customer?.mobile||j.customer?.phone||'';
         return `<div class="hoist-unassigned-card" draggable="true" ondragstart="onDiaryDragStart(event,'${j.id}')" ondragend="onDiaryDragEnd(event)" onclick="openHoistBlockEditModal('${j.id}')">
@@ -9327,7 +9335,7 @@ function openBlockOutModal(blockOutId,dateStr){
       <div style="font-size:var(--text-micro);color:var(--text-secondary);margin:var(--space-1) 0 var(--space-3)">No customer attached — the hoist just shows as blocked, and jobs can't be booked or dragged over it.</div>
       <div class="form-actions">
         <button class="btn-secondary" onclick="closeModal()">Cancel</button>
-        <button class="btn-primary" onclick="saveBlockOut('${dateStr}')">Block out</button>
+        <button class="btn-primary" onclick="saveBlockOut(${jsArg(dateStr)})">Block out</button>
       </div>
     </div>
   </div>`;
