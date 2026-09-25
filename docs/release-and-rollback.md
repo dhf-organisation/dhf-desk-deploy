@@ -18,7 +18,7 @@ The build is defined in `netlify.toml`:
 ```toml
 [build]
   publish = "dist"
-  command = "rm -rf dist && mkdir dist && cp index.html app.js ... dist/"
+  command = "rm -rf dist && mkdir dist && cp index.html auth.js app-main.js ... dist/"
 ```
 
 An explicit copy list, not "publish the repo". This is deliberate — before it

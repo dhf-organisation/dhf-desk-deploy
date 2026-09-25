@@ -17,7 +17,7 @@ body:
         - CRM (crm.html)
         - Staff portal (staff.html)
         - Customer portal (portal.html)
-        - Public site (index.html / app.js)
+        - Public site (index.html / auth.js / app-main.js)
         - Deploy / hosting
         - Not sure
     validations:

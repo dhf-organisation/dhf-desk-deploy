@@ -38,14 +38,26 @@ in this repo:
 Four independent HTML pages. They share no JavaScript and no build step; each
 is effectively its own app.
 
-### `index.html` + `app.js` — the desk
+### `index.html` + `auth.js` + `app-main.js` — the desk
 
 The main application, ~9,500 lines, used by office staff on desktop. Thirteen
 navigation tabs: Diary, Jobs, Customers, Invoices, POS, Inventory, Suppliers,
 Purchase Orders, Timesheets, Reports, Messages, Supplier Stock, Settings.
 
+**Two scripts, not one** (2026-09-25): `auth.js` is a small, eager, blocking
+`<script>` — the theme toggle, the Supabase client, Google Sign-In, and the
+allowlist check. `app-main.js` is everything else (every view, every modal —
+the ~9,500 lines above), loaded by a `<script>` tag `auth.js` injects
+dynamically, only once a sign-in actually succeeds. Before the split,
+`index.html` paid to download/parse/execute the whole app before a user had
+even signed in — Lighthouse measured 2.35s of main-thread blocking time and
+a 36/100 performance score, against 87–91 for `staff.html`/`portal.html`
+(which never loaded `app.js` at all). See `auth.js`'s own header comment for
+the mechanism.
+
 **Sign-in:** Google Identity Services → `supabase.auth.signInWithIdToken()` →
-an email/domain allowlist check in JavaScript.
+an email/domain allowlist check in JavaScript → `app-main.js` loads → the
+view renders.
 
 **Pattern throughout:** a module keeps its state in file-level `let`
 variables; `loadX()` queries Supabase; `renderX()` builds a template string

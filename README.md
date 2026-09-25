@@ -19,7 +19,7 @@ Three independent pages that share no JavaScript:
 
 | Page | Who uses it | How they sign in |
 |---|---|---|
-| `index.html` + `app.js` | Office staff, desktop | Google Sign-In, then an email/domain allowlist |
+| `index.html` + `auth.js` + `app-main.js` | Office staff, desktop | Google Sign-In, then an email/domain allowlist |
 | `staff.html` | Mechanics, on their phones (installable via `manifest.json`) | Same Google flow |
 | `portal.html` | Customers | Supabase email one-time code |
 

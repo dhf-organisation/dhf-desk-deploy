@@ -49,6 +49,7 @@ decisions, and the gotchas worth knowing before touching the code.
 > - All 7 app files are byte-identical to https://dhf-desk.netlify.app.
 > - The pre-sync GitHub state is tagged `pre-live-sync-2026-09-15`.
 > - ⚠️ The **code map and line numbers below still describe the OLD pre-sync app.js** (8,244 lines; it's now 9,532, with hash routing, Chats, check sheets, job-type items, supplier cost requests, delete customer). Refresh them before relying on them.
+> - ⚠️ **`app.js` no longer exists as one file** (2026-09-25) — it's split into `auth.js` (small, eager, blocking — sign-in only) and `app-main.js` (everything else, lazy-loaded after sign-in succeeds). See `docs/architecture.md`. The line numbers below predate the split too — they're **doubly** stale, refresh before relying on them.
 >
 > **Also from Dinuka's audit (2026-09-15):**
 > - **2026-09-08 outage:** a production deploy containing only `crm.html` wiped the whole site twice. The cause hasn't been traced (https://trello.com/c/3xDKPwIq).
@@ -64,13 +65,13 @@ A MechanicDesk-style workshop management system: diary/hoist scheduling, jobs, c
   - Live checks on 2026-09-15: HSTS preload and CSP are set; `/deploy.sh`, `/.claude/`, `/.git/` and `/CLAUDE.md` return 404.
 - **Backend:** Supabase project `cztpumgrvhmcvvpqbfqo`, called straight from the browser with the publishable key.
   - **RLS is the only real access control.** Helpers: `is_desk_user()` / `is_desk_admin()`.
-- **Shared project:** the same Supabase project also serves other modules. app.js reads the CRM `leads` table and calls the Hub's `validate_hub_token`.
+- **Shared project:** the same Supabase project also serves other modules. app-main.js reads the CRM `leads` table and calls the Hub's `validate_hub_token`.
 
 ### Three independent pages (no shared JS)
 
 | File | Audience | Auth | Notes |
 |---|---|---|---|
-| `index.html` + `app.js` | Office staff (desktop) | Google Sign-In → `signInWithIdToken`, then a domain/email allowlist check in JS | The main app, 13 nav tabs |
+| `index.html` + `auth.js` + `app-main.js` | Office staff (desktop) | Google Sign-In → `signInWithIdToken`, then a domain/email allowlist check in JS | The main app, 13 nav tabs. `auth.js` (small, eager) loads `app-main.js` (everything else, ~9,500 lines) only after sign-in succeeds — see docs/architecture.md |
 | `staff.html` | Mechanics (mobile web app via `manifest.json`) | Same Google flow + allowlist | My Jobs (`assigned_employee_id`), day diary, status, clock in/out (`desk_job_time_entries`), checklist, notes |
 | `portal.html` | Customers | Supabase email OTP (`shouldCreateUser: true`) | RLS limits rows to jobs matching `desk_customers.email`; replies are forced to customer authorship by `trg_enforce_portal_note_fields` |
 
@@ -88,7 +89,7 @@ A MechanicDesk-style workshop management system: diary/hoist scheduling, jobs, c
     - A replacement for cost/availability lookups is being decided separately (https://trello.com/c/nv7E9oDG).
 - Messaging: Resend (email) and Twilio (SMS) are called from Postgres via pg_net. Booking confirmations and day-before reminders are automated.
 
-## app.js map (8,244 lines)
+## app.js map (8,244 lines, pre-2026-09-25 split — see the ⚠️ note above)
 
 - **Pattern:** global `let` state per module → `loadX()` queries Supabase → `renderX()` builds template strings into `#main.innerHTML`.
   - Handlers are inline `onclick="fn('id')"`.
@@ -206,14 +207,14 @@ Rules this plan implies from day one:
 
 | Workflow | Trigger | Does |
 |---|---|---|
-| `.github/workflows/ci.yml` | PR, push to master | `node --check app.js`, inline-script syntax check, publish-allowlist check, Netlify build produces a clean `dist/`; migration naming/safety |
+| `.github/workflows/ci.yml` | PR, push to master | `node --check auth.js app-main.js`, inline-script syntax check, publish-allowlist check, Netlify build produces a clean `dist/`; migration naming/safety |
 | `.github/workflows/codeql.yml` | PR, push, weekly | JavaScript static analysis |
 | `.github/workflows/secrets-scan.yml` | PR, push, weekly | gitleaks (full history on the schedule) |
 | `.github/workflows/post-deploy-smoke.yml` | push to master | Waits ~90s, then `scripts/smoke.mjs` against prod |
 
 Scripts (all plain Node, no dependencies, runnable locally):
 - `scripts/check-publish-list.mjs` — page references vs the `netlify.toml` `cp` list
-- `scripts/check-inline-scripts.mjs` — syntax-checks every inline `<script>`; **this is where most of the app's code lives**, so `node --check app.js` alone proves little
+- `scripts/check-inline-scripts.mjs` — syntax-checks every inline `<script>`; **this is where most of the app's code lives**, so `node --check auth.js app-main.js` alone proves little
 - `scripts/check-migrations.mjs` — filename format; destructive SQL must declare `-- destructive: <reason>` on line 1
 - `scripts/smoke.mjs <base-url>` — read-only: app files served, internal files 404, security headers present, script order correct
 
@@ -251,7 +252,7 @@ record of them. Verified against current `app.js` on 2026-09-25, not just truste
 | ~~6~~ | ~~Multi-step saves aren't atomic (new job, POS, apply credit, receive PO, returns); stock uses read-modify-write on cached qty~~ — fixed, [PR #32](https://github.com/dhf-organisation/dhf-desk-deploy/pull/32)–[#36](https://github.com/dhf-organisation/dhf-desk-deploy/pull/36) (five SECURITY DEFINER RPCs, each flow now one transaction) | various | Data integrity, Tech debt |
 | ~~7~~ | ~~Deleting a payment doesn't un-pay the invoice; several totals ignore discount/headers~~ — fixed, [PR #31](https://github.com/dhf-organisation/dhf-desk-deploy/pull/31) (`deletePayment` totals) and [PR #42](https://github.com/dhf-organisation/dhf-desk-deploy/pull/42) (same fix for `deleteCreditApplication`, found separately) | `app.js:3901` | Bug, Data integrity |
 | ~~8~~ | ~~`esc()` doesn't escape quotes but is used in attributes/`onclick` → broken markup/XSS~~ — fixed, [PR #21](https://github.com/dhf-organisation/dhf-desk-deploy/pull/21) | `app.js:467` | Security |
-| 9 | Diary/Jobs/Reports load whole tables (all notes, all invoices); PostgREST caps responses at 1,000 rows (`fetchAllRows`, `app.js:539`, pages around that cap but still loads everything). Not broken — tech debt/perf, not a bug: nothing needs a lazy/windowed rewrite yet at current data volume | `app.js:539` | Tech debt/Performance |
+| 9 | Diary/Jobs/Reports load whole tables (all notes, all invoices); PostgREST caps responses at 1,000 rows (`fetchAllRows`, `app-main.js:421`, pages around that cap but still loads everything). Not broken — tech debt/perf, not a bug: nothing needs a lazy/windowed rewrite yet at current data volume | `app-main.js:421` | Tech debt/Performance |
 
 Also on the board:
 - Maps API key restriction check (Security, needs Dinuka)

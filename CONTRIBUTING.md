@@ -65,7 +65,7 @@ CI runs on every PR:
 
 | Check | What it catches |
 |---|---|
-| `node --check` on `app.js` | A syntax error in the main script |
+| `node --check` on `auth.js`/`app-main.js` | A syntax error in the main scripts |
 | `scripts/check-inline-scripts.mjs` | A syntax error inside a page's inline `<script>` — most of this app's code |
 | `scripts/check-publish-list.mjs` | A new file a page references but `netlify.toml` doesn't publish |
 | Netlify build | That `dist/` gets built and contains no source or docs |

@@ -7,7 +7,7 @@ if (!base) {
   process.exit(1);
 }
 
-const MUST_SERVE = ['/', '/app.js', '/portal.html', '/staff.html', '/crm.html', '/tokens.css', '/manifest.json', '/config.js'];
+const MUST_SERVE = ['/', '/auth.js', '/app-main.js', '/portal.html', '/staff.html', '/crm.html', '/tokens.css', '/manifest.json', '/config.js'];
 // Anything here would mean the publish allowlist has broken.
 const MUST_404 = ['/deploy.sh', '/CLAUDE.md', '/netlify.toml', '/.git/HEAD', '/scripts/smoke.mjs', '/supabase/migrations'];
 const MUST_HAVE_HEADERS = ['content-security-policy', 'x-frame-options', 'x-content-type-options'];
@@ -38,7 +38,7 @@ for (const h of MUST_HAVE_HEADERS) {
 //
 // Compare real <script src> tags, not raw substrings. The pages carry
 // comments that mention both filenames ("...before the stylesheet and before
-// app.js..."), and a naive indexOf matches those comments instead of the
+// auth.js..."), and a naive indexOf matches those comments instead of the
 // tags — which is exactly what made this check report a false failure on
 // every deploy until 2026-09-21.
 // Walk the document once rather than stripping comments with a regex first.
@@ -72,18 +72,18 @@ for (const page of ['/', '/staff.html', '/portal.html', '/crm.html']) {
   const html = await (await fetch(base + page)).text();
   const srcs = srcOrder(html);
   const cfgAt = srcs.findIndex((s) => /(^|\/)config\.js(\?|$)/.test(s));
-  const appAt = srcs.findIndex((s) => /(^|\/)app\.js(\?|$)/.test(s));
+  const authAt = srcs.findIndex((s) => /(^|\/)auth\.js(\?|$)/.test(s));
 
   if (cfgAt === -1) {
-    // Only index.html loads app.js, but every page needs its config.
+    // Only index.html loads auth.js, but every page needs its config.
     say(false, `${page} loads config.js`);
     continue;
   }
-  if (appAt === -1) {
-    say(true, `${page} loads config.js (no app.js on this page)`);
+  if (authAt === -1) {
+    say(true, `${page} loads config.js (no auth.js on this page)`);
     continue;
   }
-  say(cfgAt < appAt, `${page} loads config.js before app.js`);
+  say(cfgAt < authAt, `${page} loads config.js before auth.js`);
 }
 
 console.log(failed ? `\n${failed} check(s) failed` : '\nall checks passed');
