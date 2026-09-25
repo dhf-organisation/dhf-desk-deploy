@@ -45,6 +45,35 @@ Helpers should also fail closed. `portal_customer_id()` returning NULL for a
 user with no matching customer record makes policies simply match nothing;
 raising an exception instead turns a normal state into a 500 for the user.
 
+### Call these functions wrapped in `(select ...)`
+
+Every policy that calls `is_desk_user()`, `is_desk_admin()`, `portal_customer_id()`
+or Supabase's own `auth.<function>()` (`auth.uid()`, `auth.jwt()`, ...) must wrap
+the call: `(select is_desk_user())`, not a bare `is_desk_user()`. Unwrapped, Postgres
+re-evaluates the function **once per row** instead of once per query — on one
+occasion this turned reads that should take milliseconds into ones taking
+multi-second to 96-second, across 65 policies on 43 tables at once (fixed via
+PR referenced from the Trello card ["RLS query performance: unwrap auth
+function calls"](https://trello.com/c/9LqMiUUc)). Same fix, always:
+
+```sql
+-- Slow: re-evaluated per row
+using ( is_desk_user() )
+
+-- Fast: evaluated once per query
+using ( (select is_desk_user()) )
+```
+
+**This is caught automatically, not by a custom script here.** Supabase's own
+database linter flags it as `auth_rls_initplan` (category `PERFORMANCE`,
+level `WARN`) — check it any time via the Management API
+(`GET /v1/projects/{ref}/advisors/performance`) or the dashboard's Advisor
+page, rather than building bespoke tooling to scan `supabase/migrations/` for
+the same pattern. Confirmed 2026-09-25: querying the advisor live turned up a
+real, current instance on `hub_tokens` (a sibling module's table, not this
+repo's — see [Shared project](#shared-project) below), proving the linter
+actually catches this class of bug, not just in theory.
+
 ## Shared project
 
 **Other applications share this database.** The DHF hub, the CRM, and the
