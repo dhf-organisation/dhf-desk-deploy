@@ -123,6 +123,9 @@ if (resetStatus !== 0) {
   process.exit(resetStatus);
 }
 
+console.log('\nSeeding the staff allowlist (is_desk_user() depends on it having real rows) …');
+sh('node', ['scripts/db-seed-staff-allowlist.mjs']);
+
 console.log('\nChecking nothing here can actually send a real message …');
 sh('node', ['scripts/db-check-messaging-safe.mjs']);
 

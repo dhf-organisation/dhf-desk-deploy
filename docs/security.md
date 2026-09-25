@@ -117,10 +117,6 @@ Being worked through; tracked privately rather than listed here in detail:
 - **`unsafe-inline` in the CSP** — all four pages are built from inline
   scripts and inline `onclick` handlers, so removing it means restructuring
   the pages, not just flipping a header.
-- **The staff allowlist is client-side** and should be enforced in the
-  database. (The *real* gate, `is_desk_user()` in Postgres, already is
-  server-side and backs every RLS policy — this is about the config.js
-  allowlist that's currently cosmetic-only.)
 - **Service-role keys** used by out-of-repo tooling, including the scraper
   being retired, need rotating — inventoried as of 2026-09-23, see
   [docs/secrets-inventory.md](secrets-inventory.md).
@@ -131,6 +127,27 @@ than silently deleted:
   and is safe inside attributes.
 - ~~Subresource integrity isn't set on CDN scripts~~ — `supabase-js` is
   pinned with an SRI hash; other CDN scripts still don't carry one.
+- ~~The staff allowlist was hardcoded inside `is_desk_user()`'s function
+  body~~ (2026-09-25) — moved into `desk_staff_allowlist`, a table with RLS
+  enabled and zero policies, so nobody (not even staff) can read it directly
+  through PostgREST; only the `SECURITY DEFINER` function itself, which
+  bypasses RLS as the function owner, can see it. Adding or removing staff is
+  now an `INSERT`/`DELETE`, not an `ALTER FUNCTION`. The config.js allowlist
+  in `index.html`/`staff.html` remains cosmetic-only by design — the real
+  gate is, and always was, `is_desk_user()` in Postgres.
+  - **Caught in the same change**, by the pgTAP suite: rewriting the function
+    as a table `exists()` lookup subtly changed its `NULL` handling. The old
+    hardcoded version returned `NULL` when there was no signed-in user at all
+    (a service-role/superuser context); `exists()` always returns a definite
+    `true`/`false`. `enforce_portal_note_fields()` guards with
+    `if not is_desk_user()`, and PL/pgSQL's `IF NOT <null>` doesn't execute —
+    so a NULL-auth context that previously left an inserted row's
+    `is_office_only` flag alone would, under the new function, have silently
+    forced it to `false`. Fixed same-day by restoring the `NULL`-when-no-email
+    branch explicitly. No evidence anything in the live app hit that path —
+    found by the full pgTAP suite failing, not an incident — but real
+    confirmation the RLS test suite catches this class of regression, not
+    just the RLS policies it was originally written for.
 
 ## If something is exposed
 
