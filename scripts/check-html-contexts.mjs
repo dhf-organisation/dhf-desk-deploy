@@ -21,7 +21,7 @@
 // (the HTML layer), so decoding yields exactly the JSON literal again.
 import { readFileSync, readdirSync } from 'node:fs';
 
-const FILES = [...readdirSync('.').filter((f) => f.endsWith('.html')), 'app.js'];
+const FILES = [...readdirSync('.').filter((f) => f.endsWith('.html')), 'auth.js', 'app-main.js'];
 
 // Specifically: esc() output inside a quoted JS string in an event attribute.
 //
@@ -62,7 +62,7 @@ if (failed) {
   console.error(
     `\ncheck-html-contexts: ${failed} double-context interpolation(s).\n` +
     `esc() does not make a value safe inside a JS string — see the note at the\n` +
-    `top of this file, and jsArg() in app.js / crm.html.`
+    `top of this file, and jsArg() in app-main.js / crm.html.`
   );
 } else {
   console.log(`check-html-contexts: ${scanned} file(s) scanned, no double-context interpolation`);

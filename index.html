@@ -942,7 +942,12 @@ input[type=checkbox],input[type=radio],progress{accent-color:var(--accent)}
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0" integrity="sha384-JBR+x8blGwjDRO63aHCGiZMD4VNiTR4ZUGA+N6ZKLf3zNt1fK8IBpcgPaMrxqWBp" crossorigin="anonymous"></script>
-<script src="app.js"></script>
+<!-- auth.js is the small eager chunk (Google Sign-In, allowlist check). It
+     dynamically loads app-main.js — the ~9,500-line rest of the app — only
+     after a sign-in actually succeeds, so the login screen isn't paying to
+     download and parse code it doesn't need yet. See auth.js's own header
+     comment for the reasoning and the before/after Lighthouse numbers. -->
+<script src="auth.js"></script>
 <!-- The Google client ID and Maps key vary by environment, so they're applied
      from config.js here rather than hard-coded in markup/URLs. This block is
      deliberately BEFORE the Google scripts below: it's a synchronous script,

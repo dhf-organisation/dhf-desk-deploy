@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Most of this app's JavaScript lives inside <script> tags in the HTML pages
 // (portal.html, staff.html and crm.html are each a whole app in one file), so
-// `node --check app.js` alone would miss a syntax error that breaks a page
-// completely. This extracts every inline script and syntax-checks it.
+// `node --check auth.js app-main.js` alone would miss a syntax error that
+// breaks a page completely. This extracts every inline script and
+// syntax-checks it.
 import { readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

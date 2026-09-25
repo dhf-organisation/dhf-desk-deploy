@@ -32,7 +32,7 @@ jobs:
       - name: JavaScript syntax check
         run: |
           set -e
-          for f in app.js scripts/*.mjs; do
+          for f in auth.js app-main.js scripts/*.mjs; do
             [ -e "$f" ] || continue
             echo "checking $f"
             node --check "$f"
@@ -57,7 +57,8 @@ jobs:
           echo "--- dist/ contents"
           ls -la dist
           test -f dist/index.html
-          test -f dist/app.js
+          test -f dist/auth.js
+          test -f dist/app-main.js
           test -f dist/_headers
           test ! -f dist/deploy.sh || (echo "deploy.sh must not be published" && exit 1)
           test ! -f dist/CLAUDE.md || (echo "CLAUDE.md must not be published" && exit 1)

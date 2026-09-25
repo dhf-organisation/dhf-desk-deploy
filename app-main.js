@@ -1,136 +1,19 @@
-// ── THEME ────────────────────────────────────────────────────
-// Initialisation does NOT live here — it is an inline blocking script in
-// <head> (see index.html). app.js loads after the stylesheet, so setting the
-// theme from here would paint one light frame first and flash white for
-// dark-mode users on every load. This file only handles the toggle.
+// ── APP MAIN — loaded lazily, only after a successful sign-in ──────────────
+// This is the application itself: every view (Diary, Jobs, Customers,
+// Invoices, POS, Inventory, Reports, Settings, ...), every modal, every
+// render function. auth.js injects this file as a dynamically-created
+// <script> tag from inside enterSession(), after the Google Sign-In +
+// staff-allowlist check succeeds — never loaded at all for a visitor who
+// never signs in. See auth.js's own header comment for why (the login
+// screen used to pay for all ~9,500 lines of this file before it had any
+// use for them).
 //
-// The button's icon is NOT set here either: CSS derives the sun/moon from
-// [data-theme], so this stays a single attribute write and the correct glyph
-// is already correct on first paint. Writing textContent (as v3/v4 did) would
-// also destroy the inline SVGs.
-//
-// Storage key is 'dhf-theme' — it MUST match the <head> script exactly, or
-// the toggle writes one key while init reads another and the choice silently
-// fails to persist. (v4 used 'dhf-desk-theme'; unified on the brief's name.)
-function toggleTheme(){
-  const el=document.documentElement;
-  const next=el.getAttribute('data-theme')==='dark'?'light':'dark';
-  el.setAttribute('data-theme',next);
-  try{localStorage.setItem('dhf-theme',next)}catch(e){}
-}
+// Anything defined here can assume auth.js has already run: currentUser,
+// sb, SB_URL, SB_KEY, ALLOWED_DOMAIN, ALLOWED_EMAILS, KNOWN_VIEWS, showToast
+// and toggleTheme all come from there. Don't redeclare any of them here —
+// both files share one global scope, and redeclaring a `let`/`const` that
+// already exists throws immediately.
 
-// ── SUPABASE CLIENT & AUTH ──────────────────────────────────
-// Environment config comes from config.js, loaded before this file — see that
-// file for why none of it is secret. No fallback to production values here on
-// purpose: a page that can't load its config must refuse to run, not quietly
-// connect to the live database (see docs/security.md).
-const DHF_CFG=window.DHF_CONFIG;
-if(!DHF_CFG||!DHF_CFG.supabaseUrl||!DHF_CFG.supabaseKey){
-  document.body.innerHTML='<div style="padding:40px;font:16px system-ui;color:#b91c1c">Configuration failed to load — refusing to start rather than risk connecting to the wrong database. Refresh the page, or contact support if this persists.</div>';
-  throw new Error('DHF_CONFIG missing or incomplete — refusing to start');
-}
-const SB_URL=DHF_CFG.supabaseUrl;
-const SB_KEY=DHF_CFG.supabaseKey;
-// Public anon key — RLS (is_desk_user()/is_desk_admin() in the desk_* table
-// policies) is what actually protects data, keyed off the verified identity
-// in the Supabase Auth session below, exactly like the Hub and every other
-// module. Nothing in this file is trusted as an authorization decision on
-// its own.
-const sb=supabase.createClient(SB_URL,SB_KEY);
-
-const ALLOWED_DOMAIN=DHF_CFG.allowedDomain||'';
-const ALLOWED_EMAILS=DHF_CFG.allowedEmails||[];
-
-let currentUser=null;
-let currentView='diary';
-// Every routable view name switchView() knows. Used to validate a persisted
-// view before restoring it, so a stale/garbage localStorage value can't leave
-// the app on a blank screen.
-const KNOWN_VIEWS=['diary','jobs','customers','service-schedule','invoices','pos','pipeline','reports','inventory','supplier-stock','chats','messages','timesheets','settings'];
-
-async function handleGoogleSignIn(r){
-  try{
-    const {data,error}=await sb.auth.signInWithIdToken({provider:'google',token:r.credential});
-    if(error||!data.user){showToast('Sign-in failed');google.accounts.id.disableAutoSelect();return}
-    await enterSession(data.user);
-  }catch(e){showToast('Sign-in failed')}
-}
-
-async function enterSession(user){
-  const email=user.email||'',domain=email.split('@')[1]||'';
-  if(domain!==ALLOWED_DOMAIN&&!ALLOWED_EMAILS.includes(email)){
-    showToast('Access denied for '+(email||'(no email returned)'));
-    google.accounts.id.disableAutoSelect();
-    await sb.auth.signOut();
-    return;
-  }
-  // A silent re-auth (Google/FedCM re-issuing a token, a background session
-  // refresh) calls this again with the same user. When that happens, just keep
-  // the app as-is — don't re-run switchView(), which would yank whoever's
-  // mid-task back to a freshly-rendered view.
-  const sameUserReauth=currentUser&&currentUser.email===email;
-  currentUser={email,name:user.user_metadata?.full_name||user.user_metadata?.name||email.split('@')[0]};
-  document.getElementById('login-page').style.display='none';
-  document.getElementById('app').style.display='block';
-  document.getElementById('header-name').textContent=currentUser.name;
-  if(sameUserReauth)return;
-  loadInvoiceTemplateSetting(); // pre-load so print/email work with the saved template even if Settings hasn't been visited this session
-  loadWorkshopDetailsSetting(); // pre-load so the invoice header/footer show real branding even if Settings hasn't been visited this session
-  // Pick the starting view: an explicit #/<view> in the URL wins (deep link,
-  // refresh, bookmark), otherwise fall back to the last view persisted by
-  // activateNavView so a plain reload doesn't always dump them on the Diary.
-  const hashView=(location.hash.match(/^#\/([a-z-]+)$/)||[])[1];
-  if(hashView&&KNOWN_VIEWS.includes(hashView)){
-    currentView=hashView;
-  }else{
-    try{const saved=localStorage.getItem('desk-view');if(saved&&KNOWN_VIEWS.includes(saved))currentView=saved;}catch(e){}
-  }
-  switchView(currentView);
-}
-
-async function handleLogout(){
-  google.accounts.id.disableAutoSelect();
-  await sb.auth.signOut();
-  currentUser=null;
-  document.getElementById('login-page').style.display='flex';
-  document.getElementById('app').style.display='none';
-}
-
-// Supabase auto-refreshes the session token in the background. If that
-// refresh ever fails (expired/revoked refresh token — e.g. after being
-// signed out elsewhere, or a long idle tab), the client signs itself out
-// locally and fires SIGNED_OUT here. Without this listener the app never
-// finds out: currentUser stays set, the UI still looks logged in, and every
-// request from then on silently 401s (this is what broke "add customer").
-// Only react if we thought we were logged in — handleLogout() already drives
-// the same UI reset for a deliberate sign-out, so this only covers the
-// surprise case.
-sb.auth.onAuthStateChange((event)=>{
-  if(event==='SIGNED_OUT'&&currentUser){
-    currentUser=null;
-    google.accounts.id.disableAutoSelect();
-    document.getElementById('login-page').style.display='flex';
-    document.getElementById('app').style.display='none';
-    showToast('Session expired — please sign in again');
-  }
-});
-
-// ── HUB TOKEN BRIDGE ─────────────────────────────────────────
-// Purely a "you came from the Hub" courtesy signal — DHF Desk is used all
-// day, so it keeps its own persistent Supabase session (below) rather than
-// relying on the Hub's short-lived hub_token as the access mechanism.
-async function checkHubToken(){
-  const p=new URLSearchParams(location.search),t=p.get('hub_token');
-  if(!t)return;
-  try{
-    await fetch(SB_URL+'/rest/v1/rpc/validate_hub_token',{
-      method:'POST',
-      headers:{apikey:SB_KEY,'Content-Type':'application/json'},
-      body:JSON.stringify({p_token:t,p_module:'desk'})
-    });
-  }catch(e){}
-  history.replaceState({},'',location.pathname+location.hash);
-}
 
 // ── VIEW ROUTING ─────────────────────────────────────────────
 // Reflect the current top-level page in the URL as #/<view>, so browser
@@ -480,7 +363,6 @@ function esc(s){const d=document.createElement('div');d.textContent=s==null?'':S
 // literal again.
 function jsArg(v){return JSON.stringify(v==null?'':String(v)).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function truncate(s,n){return s&&s.length>n?s.slice(0,n-1).trimEnd()+'…':(s||'')}
-function showToast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3000)}
 function closeModal(){document.querySelectorAll('.modal-overlay').forEach(o=>o.remove())}
 
 // ── GOOGLE PLACES ADDRESS AUTOCOMPLETE (shared by Customers & Suppliers) ──
@@ -9612,10 +9494,3 @@ async function onHoistUnassignDrop(e,dateStr){
   }
 }
 
-// On reload, ask Supabase for the current verified session rather than
-// trusting anything held client-side — same pattern as the Hub.
-window.onload=async()=>{
-  checkHubToken();
-  const {data:{session}}=await sb.auth.getSession();
-  if(session?.user) await enterSession(session.user);
-};
