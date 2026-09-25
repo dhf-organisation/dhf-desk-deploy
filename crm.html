@@ -2527,13 +2527,32 @@ if(!window.DHF_CONFIG||!window.DHF_CONFIG.supabaseUrl||!window.DHF_CONFIG.supaba
 }
 const SB_URL = window.DHF_CONFIG.supabaseUrl;
 const SB_KEY = window.DHF_CONFIG.supabaseKey;
-const H = {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'};
+
+// Every REST call carries the signed-in user's session token, not just the
+// bare publishable key, so Postgres can tell who is asking (prerequisite
+// for tightening RLS on the CRM/Hub tables — see GitHub issue #10 /
+// GHSA-ccp7-5gg3-639q). Built fresh per request rather than once at module
+// scope: a static header object froze whatever token existed at page load,
+// which is what this replaces. deskSb (the authenticated client set up by
+// the auth gate above) auto-refreshes the session in the background, so
+// getSession() here returns a live token for as long as the tab stays
+// open — no separate refresh handling needed. No session (expired, or
+// signed out in another tab) degrades to a clear message instead of
+// requests silently going out unauthenticated or failing quietly.
+async function authHeaders(){
+  const {data:{session}={}}=await (window.deskSb?window.deskSb.auth.getSession():{data:{}});
+  if(!session){
+    document.body.innerHTML='<div style="padding:40px;font:16px system-ui;color:#b91c1c">Your session has expired. <a href="index.html">Sign in again</a>.</div>';
+    throw new Error('No active session — refusing to send an unauthenticated CRM request');
+  }
+  return {'apikey':SB_KEY,'Authorization':'Bearer '+session.access_token,'Content-Type':'application/json','Prefer':'return=representation'};
+}
 
 const sb = {
-  get: (t,q='')=>fetch(`${SB_URL}/rest/v1/${t}?${q}`,{headers:H}).then(r=>r.ok?r.json():r.text().then(e=>{throw e})),
-  post: (t,b)=>fetch(`${SB_URL}/rest/v1/${t}`,{method:'POST',headers:H,body:JSON.stringify(b)}).then(r=>r.ok?r.json():r.text().then(e=>{throw e})),
-  patch: (t,id,b)=>fetch(`${SB_URL}/rest/v1/${t}?id=eq.${id}`,{method:'PATCH',headers:H,body:JSON.stringify(b)}).then(r=>r.ok?r.json():r.text().then(e=>{throw e})),
-  del: (t,id)=>fetch(`${SB_URL}/rest/v1/${t}?id=eq.${id}`,{method:'DELETE',headers:H}).then(r=>{if(!r.ok) return r.text().then(e=>{throw e})}),
+  get: async (t,q='')=>fetch(`${SB_URL}/rest/v1/${t}?${q}`,{headers:await authHeaders()}).then(r=>r.ok?r.json():r.text().then(e=>{throw e})),
+  post: async (t,b)=>fetch(`${SB_URL}/rest/v1/${t}`,{method:'POST',headers:await authHeaders(),body:JSON.stringify(b)}).then(r=>r.ok?r.json():r.text().then(e=>{throw e})),
+  patch: async (t,id,b)=>fetch(`${SB_URL}/rest/v1/${t}?id=eq.${id}`,{method:'PATCH',headers:await authHeaders(),body:JSON.stringify(b)}).then(r=>r.ok?r.json():r.text().then(e=>{throw e})),
+  del: async (t,id)=>fetch(`${SB_URL}/rest/v1/${t}?id=eq.${id}`,{method:'DELETE',headers:await authHeaders()}).then(r=>{if(!r.ok) return r.text().then(e=>{throw e})}),
 };
 
 // DHF Desk integration: matches an existing desk_customers row by phone,
