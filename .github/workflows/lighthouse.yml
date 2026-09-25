@@ -26,6 +26,7 @@ jobs:
             https://dhf-desk.netlify.app/
             https://dhf-desk.netlify.app/staff.html
             https://dhf-desk.netlify.app/portal.html
+            https://dhf-desk.netlify.app/crm.html
           configPath: ./.github/lighthouserc.json
           uploadArtifacts: true
           temporaryPublicStorage: true
