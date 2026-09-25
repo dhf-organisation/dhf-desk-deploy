@@ -1,0 +1,25 @@
+# Perf/a11y/SEO budgets against the live public-facing pages (login/landing
+# screens — staff, staff mobile and portal all require Google/OTP sign-in, so
+# an unauthenticated Lighthouse run audits exactly what an anonymous visitor
+# actually sees, same as any real first-time visitor). Accessibility and SEO
+# are hard-gated; performance and best-practices are warnings only.
+name: Lighthouse
+on:
+  workflow_dispatch:
+  schedule: [{ cron: "0 6 * * 1" }] # weekly, Monday 06:00 UTC
+permissions: { contents: read }
+jobs:
+  lighthouse:
+    if: github.repository == 'dhf-organisation/dhf-desk-deploy'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: treosh/lighthouse-ci-action@3e7e23fb74242897f95c0ba9cabad3d0227b9b18 # v12
+        with:
+          urls: |
+            https://dhf-desk.netlify.app/
+            https://dhf-desk.netlify.app/staff.html
+            https://dhf-desk.netlify.app/portal.html
+          configPath: ./.github/lighthouserc.json
+          uploadArtifacts: true
+          temporaryPublicStorage: true
