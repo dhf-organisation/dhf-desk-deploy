@@ -237,19 +237,21 @@ whatever was feeding them.
 
 ## Known issues (all on Trello, Backlog)
 
-Issues 1–4 and 6–9 were also confirmed present in the **live** code on 2026-09-15.
+Issues 1–8 below were all fixed and merged during the 2026-09 productionisation work; kept here
+(struck through) for the PR references rather than deleted, since this table used to be the only
+record of them. Verified against current `app.js` on 2026-09-25, not just trusted from memory.
 
 | # | Issue | Where | Labels |
 |---|---|---|---|
-| 1 | Multi-day diary bar click calls `openJobFromDiary(event,id)`, which takes one argument, so it's broken | `app.js:7902` | Bug |
-| 2 | Multi-day detection compares UTC `slice(0,10)` dates → same-day jobs before ~10am show as multi-day; bars overlap (fixed `top:56px`); jobs that started last week don't show | `app.js:7888`, `7925` | Bug |
-| 3 | `toDateInputValue` uses UTC → "today" is yesterday before 10–11am; weeks start Saturday | `app.js:4127` | Bug, Data integrity |
-| 4 | Quote→invoice drops `is_header`, `sort_order`, `tax_type`, discount, `order_no` | `app.js:3558` | Bug, Data integrity |
-| 5 | Creating a job from the Diary lands on the Jobs list with the Diary tab still highlighted (**already fixed live**, not yet in GitHub) | `app.js:7351` | Bug |
-| 6 | Multi-step saves aren't atomic (new job, POS, apply credit, receive PO, returns); stock uses read-modify-write on cached qty | various | Data integrity, Tech debt |
-| 7 | Deleting a payment doesn't un-pay the invoice; several totals ignore discount/headers | `app.js:3546`, `2858`, `1028` | Bug, Data integrity |
-| 8 | `esc()` doesn't escape quotes but is used in attributes/`onclick` → broken markup/XSS | `app.js:338` (+ portal/staff) | Security |
-| 9 | Diary/Jobs/Reports load whole tables (all notes, all invoices); PostgREST caps responses at 1,000 rows (live code now pages with `fetchAllRows`, but still loads everything) | `app.js:6198`, `4749` | Tech debt/Performance |
+| ~~1~~ | ~~Multi-day diary bar click calls `openJobFromDiary(event,id)`, which takes one argument, so it's broken~~ — fixed, [PR #43](https://github.com/dhf-organisation/dhf-desk-deploy/pull/43) | `app.js:7902` | Bug |
+| ~~2~~ | ~~Multi-day detection compares UTC `slice(0,10)` dates → same-day jobs before ~10am show as multi-day; bars overlap; jobs that started last week don't show~~ — fixed, [PR #43](https://github.com/dhf-organisation/dhf-desk-deploy/pull/43) (`isMultiDayJob` helper) | `app.js:7902` | Bug |
+| ~~3~~ | ~~`toDateInputValue` uses UTC → "today" is yesterday before 10–11am; weeks start Saturday~~ — fixed, [PR #28](https://github.com/dhf-organisation/dhf-desk-deploy/pull/28) (`toDateInputValue` now delegates to `isoDateOnly`) | `app.js:4520` | Bug, Data integrity |
+| ~~4~~ | ~~Quote→invoice drops `is_header`, `sort_order`, `tax_type`, discount, `order_no`~~ — fixed, [PR #30](https://github.com/dhf-organisation/dhf-desk-deploy/pull/30) | `app.js:3924` | Bug, Data integrity |
+| ~~5~~ | ~~Creating a job from the Diary lands on the Jobs list with the Diary tab still highlighted~~ — fixed live before the 2026-09-15 repo sync | `app.js` | Bug |
+| ~~6~~ | ~~Multi-step saves aren't atomic (new job, POS, apply credit, receive PO, returns); stock uses read-modify-write on cached qty~~ — fixed, [PR #32](https://github.com/dhf-organisation/dhf-desk-deploy/pull/32)–[#36](https://github.com/dhf-organisation/dhf-desk-deploy/pull/36) (five SECURITY DEFINER RPCs, each flow now one transaction) | various | Data integrity, Tech debt |
+| ~~7~~ | ~~Deleting a payment doesn't un-pay the invoice; several totals ignore discount/headers~~ — fixed, [PR #31](https://github.com/dhf-organisation/dhf-desk-deploy/pull/31) (`deletePayment` totals) and [PR #42](https://github.com/dhf-organisation/dhf-desk-deploy/pull/42) (same fix for `deleteCreditApplication`, found separately) | `app.js:3901` | Bug, Data integrity |
+| ~~8~~ | ~~`esc()` doesn't escape quotes but is used in attributes/`onclick` → broken markup/XSS~~ — fixed, [PR #21](https://github.com/dhf-organisation/dhf-desk-deploy/pull/21) | `app.js:467` | Security |
+| 9 | Diary/Jobs/Reports load whole tables (all notes, all invoices); PostgREST caps responses at 1,000 rows (`fetchAllRows`, `app.js:539`, pages around that cap but still loads everything). Not broken — tech debt/perf, not a bug: nothing needs a lazy/windowed rewrite yet at current data volume | `app.js:539` | Tech debt/Performance |
 
 Also on the board:
 - Maps API key restriction check (Security, needs Dinuka)
