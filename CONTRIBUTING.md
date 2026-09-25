@@ -67,6 +67,7 @@ CI runs on every PR:
 |---|---|
 | `node --check` on `auth.js`/`app-main.js` | A syntax error in the main scripts |
 | `scripts/check-inline-scripts.mjs` | A syntax error inside a page's inline `<script>` — most of this app's code |
+| `node --test tests/**/*.test.mjs` | A regression in the pure money/date-math helpers (`calcInvoiceTotals`, `isMultiDayJob`, `poTotal`, `creditNoteTotal`, the date helpers) — see `tests/` |
 | `scripts/check-publish-list.mjs` | A new file a page references but `netlify.toml` doesn't publish |
 | Netlify build | That `dist/` gets built and contains no source or docs |
 | `scripts/check-migrations.mjs` | Badly named migrations, and undeclared destructive SQL |
@@ -74,8 +75,9 @@ CI runs on every PR:
 | gitleaks | Credentials in the diff |
 
 Netlify also builds a **deploy preview** for every PR. Open it and click
-through the page you changed — CI checks that the code parses, not that the
-feature works, and there are no automated tests yet.
+through the page you changed — CI checks that the code parses and that the
+pure logic still computes correctly, not that the feature works end-to-end in
+a browser; there's no E2E coverage yet.
 
 Preview URLs are public and unlisted. They're backed by the **production**
 database, so anything you do in a preview is real.

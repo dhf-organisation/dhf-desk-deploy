@@ -42,6 +42,9 @@ jobs:
       - name: Inline script syntax check (HTML pages)
         run: node scripts/check-inline-scripts.mjs
 
+      - name: JS unit tests (pure-logic helpers)
+        run: node --test "tests/**/*.test.mjs"
+
       - name: Publish allowlist is complete
         run: node scripts/check-publish-list.mjs
 
