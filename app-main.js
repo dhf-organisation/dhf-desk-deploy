@@ -365,6 +365,20 @@ function jsArg(v){return JSON.stringify(v==null?'':String(v)).replace(/&/g,'&amp
 function truncate(s,n){return s&&s.length>n?s.slice(0,n-1).trimEnd()+'…':(s||'')}
 function closeModal(){document.querySelectorAll('.modal-overlay').forEach(o=>o.remove())}
 
+// Delays calling fn until `ms` have passed since the last call — for search/
+// filter inputs whose oninput handler re-renders a big in-memory list
+// (customers.filter() over 11,000+ rows, then a fresh main.innerHTML=...) or
+// re-queries. Undebounced, that's a full list rebuild on every keystroke.
+// Each call site gets its own wrapper (its own closured `t`), so debouncing
+// one input's handler never cancels another's.
+function debounce(fn,ms){
+  let t;
+  return function(...args){
+    clearTimeout(t);
+    t=setTimeout(()=>fn.apply(this,args),ms);
+  };
+}
+
 // ── GOOGLE PLACES ADDRESS AUTOCOMPLETE (shared by Customers & Suppliers) ──
 function fillAddressFromPlace(place,prefix){
   const comp={};
@@ -491,11 +505,12 @@ function renderVehiclesList(){
   main.innerHTML=h;
 }
 
-function onVehicleSearch(v){
+function _onVehicleSearch(v){
   vehicleSearchTerm=v;
   renderVehiclesList();
   setTimeout(()=>{const i=document.getElementById('vehicle-search');if(i){i.focus();i.setSelectionRange(v.length,v.length)}},0);
 }
+const onVehicleSearch=debounce(_onVehicleSearch,200);
 
 async function openCustomerFromVehicle(customerId){
   selectedCustomerId=customerId;
@@ -528,11 +543,12 @@ function renderCustomerList(){
   main.innerHTML=h;
 }
 
-function onCustomerSearch(v){
+function _onCustomerSearch(v){
   customerSearchTerm=v;
   renderCustomerList();
   setTimeout(()=>{const i=document.getElementById('customer-search');if(i){i.focus();i.setSelectionRange(v.length,v.length)}},0);
 }
+const onCustomerSearch=debounce(_onCustomerSearch,200);
 
 async function openCustomer(id){
   selectedCustomerId=id;
@@ -1377,7 +1393,7 @@ function renderPosPage(){
   main.innerHTML=h;
 }
 
-function onPosCustomerSearch(term){
+function _onPosCustomerSearch(term){
   const t=term.trim().toLowerCase();
   const results=document.getElementById('pos-customer-results');
   if(!t){results.innerHTML='';return}
@@ -1388,6 +1404,7 @@ function onPosCustomerSearch(term){
   h+='</div>';
   results.innerHTML=h;
 }
+const onPosCustomerSearch=debounce(_onPosCustomerSearch,200);
 function selectPosCustomer(id){
   posCustomerId=id;posNewCustomerName='';posNewCustomerMobile='';posNewCustomerPhone='';posNewCustomerEmail='';
   document.getElementById('pos-customer-area').innerHTML=posCustomerAreaHtml();
@@ -1401,13 +1418,14 @@ function clearPosCustomer(){
   document.getElementById('pos-customer-area').innerHTML=posCustomerAreaHtml();
 }
 
-function onPosItemSearch(term){
+function _onPosItemSearch(term){
   const t=term.trim().toLowerCase();
   const results=document.getElementById('pos-item-results');
   if(!t){results.innerHTML='';return}
   const matches=stockItems.filter(s=>s.is_active&&(s.name.toLowerCase().includes(t)||(s.sku||'').toLowerCase().includes(t))).slice(0,8);
   results.innerHTML=matches.length?matches.map(s=>`<div class="autocomplete-item" onclick="addPosStockItem('${s.id}')">${esc(s.name)}${s.sku?' ('+esc(s.sku)+')':''}${s.sell_price?' — $'+Number(s.sell_price).toFixed(2):''}</div>`).join(''):'<div class="autocomplete-item" style="color:var(--text-secondary)">No matches</div>';
 }
+const onPosItemSearch=debounce(_onPosItemSearch,200);
 function addPosStockItem(stockId){
   const s=stockItems.find(x=>x.id===stockId);
   if(!s)return;
