@@ -73,6 +73,7 @@ CI runs on every PR:
 | `scripts/check-migrations.mjs` | Badly named migrations, and undeclared destructive SQL |
 | CodeQL | Static analysis findings in the JavaScript |
 | gitleaks | Credentials in the diff |
+| Lighthouse (PR preview) — only when a page/asset file changed | An accessibility regression on the deploy preview (hard-gated, score < 0.95 fails); performance/SEO/best-practices are budgeted too but warning-only |
 
 Netlify also builds a **deploy preview** for every PR. Open it and click
 through the page you changed — CI checks that the code parses and that the
