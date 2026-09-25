@@ -2784,6 +2784,14 @@ function esc(s){const d=document.createElement('div');d.textContent=s==null?'':S
 //   onclick="fn(${jsArg(name)})"     <- no quotes around it, JSON adds them
 // esc() is wrong there: the browser HTML-decodes the attribute before parsing
 // the JS, so &#39; becomes a bare quote and the handler fails to compile.
+//
+// INVARIANT: the only values still interpolated raw as onclick="fn('${x}')"
+// (no jsArg()) are UUID record ids — nothing that needs escaping can appear
+// in one. Any non-id value in this position (a stage, a status, a slug,
+// anything not a UUID from the database) MUST go through jsArg(), not a bare
+// '${...}'. See the 2026-09-25 cleanup that converted every non-id site
+// (Trello: "~100 handlers interpolate record ids straight into onclick
+// strings").
 function jsArg(v){return JSON.stringify(v==null?'':String(v)).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 // Renders enquiry question/answer HTML, which comes from the contenteditable
@@ -2830,7 +2838,7 @@ function rteCmd(editorId, cmd){
   document.execCommand(cmd, false, null);
 }
 function rteToolbar(editorId){
-  const b=(cmd,tip,label)=>`<button type="button" onmousedown="event.preventDefault()" onclick="rteCmd('${editorId}','${cmd}')" title="${tip}">${label}</button>`;
+  const b=(cmd,tip,label)=>`<button type="button" onmousedown="event.preventDefault()" onclick="rteCmd('${editorId}',${jsArg(cmd)})" title="${tip}">${label}</button>`;
   return `<div class="rte-toolbar">${b('bold','Bold','<b>B</b>')}${b('italic','Italic','<i>I</i>')}${b('underline','Underline','<u>U</u>')}${b('insertUnorderedList','Bullet list','• List')}${b('insertOrderedList','Numbered list','1. List')}</div>`;
 }
 function matches(l){
@@ -2992,9 +3000,9 @@ function makeCard(lead,stage){
         const isToday=fu.toDateString()===now.toDateString();
         const label=fu.toLocaleString('en-AU',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Australia/Sydney'});
         const cls=isOverdue?'overdue':isToday?'today':'';
-        return `<div class="card-followup-date ${cls}" title="Click to change follow-up date" onclick="event.stopPropagation();openCardFUDate('${lead.id}','${lead.stage||stage}')">${fuIcon} ${isOverdue?'⚠ ':''}${label} ✎</div>`;
+        return `<div class="card-followup-date ${cls}" title="Click to change follow-up date" onclick="event.stopPropagation();openCardFUDate('${lead.id}',${jsArg(lead.stage||stage)})">${fuIcon} ${isOverdue?'⚠ ':''}${label} ✎</div>`;
       } else {
-        return `<div class="card-followup-date-empty" onclick="event.stopPropagation();openCardFUDate('${lead.id}','${lead.stage||stage}')" title="Set follow-up date">${fuIcon} Set follow-up date</div>`;
+        return `<div class="card-followup-date-empty" onclick="event.stopPropagation();openCardFUDate('${lead.id}',${jsArg(lead.stage||stage)})" title="Set follow-up date">${fuIcon} Set follow-up date</div>`;
       }
     })()+
     (lead.notes?`<div class="card-notes">${esc(lead.notes)}</div>`:'')+
@@ -3149,7 +3157,7 @@ function openModal(lead,stage){
   document.getElementById('m-move-btns').innerHTML=STAGES.map(s=>{
     if(s===stage)return`<button class="move-btn current">${s}</button>`;
     let ex=s==='Won'?' won-btn':s==='Closed'?' closed-btn':'';
-    return`<button class="move-btn${ex}" onclick="modalMove('${s}')">${s}</button>`;
+    return`<button class="move-btn${ex}" onclick="modalMove(${jsArg(s)})">${s}</button>`;
   }).join('')+`<button class="move-btn delete-btn" onclick="modalDelete()">🗑 Remove lead</button>`;
   // Pending enquiries for this lead
   renderModalEnqs(lead.id);
@@ -4363,42 +4371,42 @@ function renderGrid(){
       <td style="color:var(--muted);font-weight:600;min-width:36px;padding:8px 12px">${i+1}</td>
       <td style="white-space:nowrap;padding:8px 12px;font-size:12px">${esc(l.date||'—')}</td>
       <td class="editable"><input class="grid-cell-input" style="font-weight:600;min-width:130px" value="${esc(l.name||'')}" placeholder="Name"
-        onchange="gridDebounce('${l.id}-name',()=>gridSaveField('${l.id}','${l.stage}','name',this.value,document.getElementById('${rowId}')),600)"></td>
+        onchange="gridDebounce('${l.id}-name',()=>gridSaveField('${l.id}',${jsArg(l.stage)},'name',this.value,document.getElementById('${rowId}')),600)"></td>
       <td class="editable"><input class="grid-cell-input" style="min-width:110px" value="${esc(l.phone||'')}" placeholder="Phone"
-        onchange="gridDebounce('${l.id}-phone',()=>gridSaveField('${l.id}','${l.stage}','phone',this.value,document.getElementById('${rowId}')),600)"></td>
+        onchange="gridDebounce('${l.id}-phone',()=>gridSaveField('${l.id}',${jsArg(l.stage)},'phone',this.value,document.getElementById('${rowId}')),600)"></td>
       <td class="editable"><input class="grid-cell-input" style="min-width:110px" value="${esc(l.email||'')}" placeholder="Email"
-        onchange="gridDebounce('${l.id}-email',()=>gridSaveField('${l.id}','${l.stage}','email',this.value,document.getElementById('${rowId}')),600)"></td>
+        onchange="gridDebounce('${l.id}-email',()=>gridSaveField('${l.id}',${jsArg(l.stage)},'email',this.value,document.getElementById('${rowId}')),600)"></td>
       <td class="editable"><select class="grid-cell-select" style="min-width:110px"
-        onchange="gridSaveField('${l.id}','${l.stage}','enquiry',this.value,document.getElementById('${rowId}'))">
+        onchange="gridSaveField('${l.id}',${jsArg(l.stage)},'enquiry',this.value,document.getElementById('${rowId}'))">
         ${['','Tyres','Mechanical','Roadworthy','Wheel Alignment','Tyres + Mechanical','Roadworthy + Mechanical','Logbook','Inspection','Wheels','None Yet'].map(s=>`<option${s===l.enquiry?' selected':''}>${s}</option>`).join('')}
       </select></td>
       <td class="editable"><select class="grid-cell-select" style="min-width:90px"
-        onchange="gridSaveField('${l.id}','${l.stage}','source',this.value,document.getElementById('${rowId}'))">
+        onchange="gridSaveField('${l.id}',${jsArg(l.stage)},'source',this.value,document.getElementById('${rowId}'))">
         ${['','FB Lead Ads','FB Enquiry','Instagram DM','Google Ads','WhatsApp','Website','Walk-in','Referral','Existing Customer','Service Reminder','Other'].map(s=>`<option${s===l.source?' selected':''}>${s}</option>`).join('')}
       </select></td>
       <td class="editable"><input class="grid-cell-input" style="min-width:130px" list="ad-name-list" value="${esc(l.ad_name||'')}" placeholder="Ad / campaign"
-        onchange="gridDebounce('${l.id}-adname',()=>gridSaveField('${l.id}','${l.stage}','ad_name',this.value,document.getElementById('${rowId}')),600)"></td>
+        onchange="gridDebounce('${l.id}-adname',()=>gridSaveField('${l.id}',${jsArg(l.stage)},'ad_name',this.value,document.getElementById('${rowId}')),600)"></td>
       <td class="editable"><select class="grid-cell-select" style="min-width:80px"
-        onchange="gridSaveField('${l.id}','${l.stage}','rep',this.value,document.getElementById('${rowId}'))">
+        onchange="gridSaveField('${l.id}',${jsArg(l.stage)},'rep',this.value,document.getElementById('${rowId}'))">
         ${['','Jonelle','Dinuka','Dinks','Other'].map(s=>`<option${s===l.rep?' selected':''}>${s}</option>`).join('')}
       </select></td>
       <td class="editable"><select class="grid-cell-select" style="min-width:140px"
-        onchange="gridSaveStage('${l.id}','${l.stage}',this.value,document.getElementById('${rowId}'))">
+        onchange="gridSaveStage('${l.id}',${jsArg(l.stage)},this.value,document.getElementById('${rowId}'))">
         ${STAGES.map(s=>`<option${s===l.stage?' selected':''}>${s}</option>`).join('')}
       </select></td>
       <td class="editable"><select class="grid-cell-select" style="min-width:120px"
-        onchange="gridSaveField('${l.id}','${l.stage}','close_reason',this.value,document.getElementById('${rowId}'))">
+        onchange="gridSaveField('${l.id}',${jsArg(l.stage)},'close_reason',this.value,document.getElementById('${rowId}'))">
         <option value=""${!l.close_reason?' selected':''}>—</option>
         ${['Price','No Response','Distance','Unsolved Problem','Not Ready to Buy','Other'].map(s=>`<option${s===(l.close_reason||'')?' selected':''}>${s}</option>`).join('')}
       </select></td>
       <td class="editable"><input class="grid-cell-input" style="min-width:80px;text-align:right" value="${esc((l.value||'').replace(/[$,]/g,''))}" placeholder="0"
-        onchange="gridDebounce('${l.id}-value',()=>gridSaveField('${l.id}','${l.stage}','value',this.value?'$'+parseInt(this.value.replace(/[^0-9]/g,'')).toLocaleString():'',document.getElementById('${rowId}')),600)"></td>
+        onchange="gridDebounce('${l.id}-value',()=>gridSaveField('${l.id}',${jsArg(l.stage)},'value',this.value?'$'+parseInt(this.value.replace(/[^0-9]/g,'')).toLocaleString():'',document.getElementById('${rowId}')),600)"></td>
       <td class="editable"><select class="grid-cell-select" style="min-width:70px"
-        onchange="gridSaveField('${l.id}','${l.stage}','quote',this.value,document.getElementById('${rowId}'))">
+        onchange="gridSaveField('${l.id}',${jsArg(l.stage)},'quote',this.value,document.getElementById('${rowId}'))">
         <option${l.quote==='No'?' selected':''}>No</option><option${l.quote==='Yes'?' selected':''}>Yes</option>
       </select></td>
       <td class="editable" style="min-width:200px"><input class="grid-cell-input" value="${esc(l.notes||'')}" placeholder="Notes…"
-        onchange="gridDebounce('${l.id}-notes',()=>gridSaveField('${l.id}','${l.stage}','notes',this.value,document.getElementById('${rowId}')),600)"></td>
+        onchange="gridDebounce('${l.id}-notes',()=>gridSaveField('${l.id}',${jsArg(l.stage)},'notes',this.value,document.getElementById('${rowId}')),600)"></td>
     </tr>`;
   }).join('');
 }
@@ -5915,12 +5923,12 @@ function renderCalDayCell(date, events, today, otherMonth){
 
   let inner = `<div class="cal-day-num-row"><div class="cal-day-num">${date.getDate()}</div>${wonBadge}</div>`;
   dayEvs.slice(0,MAX_SHOW).forEach(ev=>{
-    inner += `<div class="cal-event ${ev.cls}" title="${ev.title}: ${ev.sub}" onclick="calClickEvent(event,'${dateStr}')">${ev.title}</div>`;
+    inner += `<div class="cal-event ${ev.cls}" title="${ev.title}: ${ev.sub}" onclick="calClickEvent(event,${jsArg(dateStr)})">${ev.title}</div>`;
   });
   if(dayEvs.length>MAX_SHOW){
-    inner += `<div class="cal-more" onclick="calClickDay('${dateStr}')">+${dayEvs.length-MAX_SHOW} more</div>`;
+    inner += `<div class="cal-more" onclick="calClickDay(${jsArg(dateStr)})">+${dayEvs.length-MAX_SHOW} more</div>`;
   }
-  return `<div class="${cls}" onclick="calClickDay('${dateStr}')">${inner}</div>`;
+  return `<div class="${cls}" onclick="calClickDay(${jsArg(dateStr)})">${inner}</div>`;
 }
 
 function renderCalWeek(){
@@ -5957,7 +5965,7 @@ function renderCalWeek(){
       });
       let inner='';
       cellEvs.forEach(ev=>{
-        inner+=`<div class="cal-week-event ${ev.cls}" title="${ev.title}: ${ev.sub}" style="background:${ev.color}15;border-left:3px solid ${ev.color}" onclick="calEventDetail(event,'${d.toDateString()}')">${ev.title}</div>`;
+        inner+=`<div class="cal-week-event ${ev.cls}" title="${ev.title}: ${ev.sub}" style="background:${ev.color}15;border-left:3px solid ${ev.color}" onclick="calEventDetail(event,${jsArg(d.toDateString())})">${ev.title}</div>`;
       });
       h+=`<div class="cal-week-cell${isToday?' today-col':''}">${inner}</div>`;
     });
@@ -6011,7 +6019,7 @@ function renderCalDay(){
 
 function renderDayEventCard(ev){
   const timeStr = fmtTime(ev.dt);
-  return `<div class="cal-day-event" onclick="handleCalEventClick('${ev.type}','${encodeURIComponent(JSON.stringify({id:ev.lead?.id,stage:ev.stage,qid:ev.enquiry?.id}))}')">
+  return `<div class="cal-day-event" onclick="handleCalEventClick(${jsArg(ev.type)},'${encodeURIComponent(JSON.stringify({id:ev.lead?.id,stage:ev.stage,qid:ev.enquiry?.id}))}')">
     <div class="cal-day-event-dot" style="background:${ev.color}"></div>
     <div class="cal-day-event-body">
       <div class="cal-day-event-title">${esc(ev.title)}</div>
