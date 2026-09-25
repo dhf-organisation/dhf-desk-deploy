@@ -2689,7 +2689,15 @@ function sync(s){const d=document.getElementById('syncDot');d.className='sync-do
 async function loadAll(){
   sync('syncing');
   try{
-    // Paginate leads — Supabase PostgREST caps at 1000 rows per request
+    // Paginate leads — Supabase PostgREST caps at 1000 rows per request.
+    // app-main.js has its own independent copy of this same idea
+    // (fetchAllRows, ~app-main.js:435), deliberately not shared: that file
+    // pages through the supabase-js client's chainable .range(), while this
+    // page talks to PostgREST through the hand-rolled sb.get() wrapper above
+    // — no common query-builder shape a helper could wrap for both, and each
+    // file only has the one call site that needs it. If this ever needs a
+    // real fix (a lazy/windowed rewrite instead of "load everything, just in
+    // pages"), update both places.
     const LIMIT = 1000;
     let allLeads = [], offset = 0, batch;
     do {

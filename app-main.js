@@ -432,6 +432,14 @@ let vehicleSearchTerm='';
 // mid-alphabet). Page through in cap-sized chunks so full-table loads return
 // everything. `build` must return a *fresh* query builder each call, since a
 // builder can't be re-ranged after use. Needs a stable .order() to page safely.
+//
+// crm.html's loadAll() has its own independent copy of this same cap-paging
+// idea (~line 2693), deliberately not shared: crm.html talks to PostgREST
+// through its own hand-rolled `sb.get(table, queryString)` REST wrapper, not
+// this file's supabase-js client, so there's no common query-builder shape a
+// helper could wrap for both — and each file only has the one call site that
+// needs it. If the 1000-row cap ever needs a real fix (a lazy/windowed
+// rewrite — see known issue #9 in CLAUDE.md), update both places.
 async function fetchAllRows(build){
   const PAGE=1000;
   let out=[],from=0;
