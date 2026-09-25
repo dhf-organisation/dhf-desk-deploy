@@ -941,29 +941,36 @@ input[type=checkbox],input[type=radio],progress{accent-color:var(--accent)}
 <div class="toast" id="toast"></div>
 
 <script src="config.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0" integrity="sha384-JBR+x8blGwjDRO63aHCGiZMD4VNiTR4ZUGA+N6ZKLf3zNt1fK8IBpcgPaMrxqWBp" crossorigin="anonymous"></script>
-<!-- auth.js is the small eager chunk (Google Sign-In, allowlist check). It
-     dynamically loads app-main.js — the ~9,500-line rest of the app — only
-     after a sign-in actually succeeds, so the login screen isn't paying to
-     download and parse code it doesn't need yet. See auth.js's own header
-     comment for the reasoning and the before/after Lighthouse numbers. -->
-<script src="auth.js"></script>
-<!-- The Google client ID and Maps key vary by environment, so they're applied
-     from config.js here rather than hard-coded in markup/URLs. This block is
-     deliberately BEFORE the Google scripts below: it's a synchronous script,
-     so the data-client_id is in place before the async GSI script can read
-     it, and Maps is injected with the right key. -->
+<!-- config.js stays a plain blocking script (tiny, ~1KB, and auth.js reads
+     window.DHF_CONFIG at its own top level — it must already be set).
+     supabase-js and auth.js are `defer`: Lighthouse flagged supabase-js
+     alone as a 2.2s render-blocking cost. `defer` downloads both in
+     parallel with HTML parsing instead of blocking it, while still
+     guaranteeing execution order (supabase-js before auth.js, both before
+     DOMContentLoaded) — auth.js's `supabase.createClient(...)` still runs
+     with the real library in place. auth.js is the small eager chunk
+     (Google Sign-In, allowlist check); it dynamically loads app-main.js —
+     the ~9,500-line rest of the app — only after a sign-in actually
+     succeeds, so the login screen isn't paying to download and parse code
+     it doesn't need yet. See auth.js's own header comment for the
+     reasoning and the before/after Lighthouse numbers. -->
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0" integrity="sha384-JBR+x8blGwjDRO63aHCGiZMD4VNiTR4ZUGA+N6ZKLf3zNt1fK8IBpcgPaMrxqWBp" crossorigin="anonymous"></script>
+<script defer src="auth.js"></script>
+<!-- The Google client ID varies by environment, so it's applied from
+     config.js here rather than hard-coded in markup. This block is
+     deliberately a plain synchronous script, so the data-client_id is in
+     place before the async GSI script can read it.
+     Maps is NOT loaded here — nothing on the login screen needs address
+     autocomplete. auth.js's loadMapsApi() loads it only after sign-in
+     succeeds, same reasoning as the auth.js/app-main.js split above:
+     Lighthouse measured ~215KB / ~600ms of Maps API scripting cost on
+     every login-screen visit before this, none of it usable until a
+     signed-in user reaches a Customer/Supplier address field. -->
 <script>
 (function(){
   var cfg=window.DHF_CONFIG||{};
   var onload=document.getElementById('g_id_onload');
   if(onload&&cfg.googleClientId)onload.dataset.client_id=cfg.googleClientId;
-  if(cfg.mapsKey){
-    var s=document.createElement('script');
-    s.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(cfg.mapsKey)+'&libraries=places&loading=async';
-    s.async=true;s.defer=true;
-    document.head.appendChild(s);
-  }
   // Non-production environments get a visible banner, so nobody mistakes
   // staging for the real thing while entering a customer's job.
   if(cfg.env&&cfg.env!=='production'){

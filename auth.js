@@ -89,6 +89,25 @@ function loadAppMain(){
   return appMainLoadPromise;
 }
 
+// Same reasoning as loadAppMain(): nothing on the login screen uses address
+// autocomplete, so there's no reason to pay for the Maps JS API (~215KB
+// across main.js/places.js/util.js/common.js/controls.js, ~600ms of
+// scripting) before a user has signed in. Fire-and-forget, not awaited —
+// app-main.js's views don't need Maps to render, only specific address
+// fields inside them do, so there's no reason to block switchView() on it.
+// mapsApiRequested guards against injecting a second <script src> tag if a
+// user signs out and back in within the same page load (Google's Maps
+// loader throws if included twice).
+let mapsApiRequested=false;
+function loadMapsApi(){
+  if(mapsApiRequested||!DHF_CFG.mapsKey)return;
+  mapsApiRequested=true;
+  const s=document.createElement('script');
+  s.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(DHF_CFG.mapsKey)+'&libraries=places&loading=async';
+  s.async=true;s.defer=true;
+  document.head.appendChild(s);
+}
+
 async function handleGoogleSignIn(r){
   try{
     const {data,error}=await sb.auth.signInWithIdToken({provider:'google',token:r.credential});
@@ -117,6 +136,7 @@ async function enterSession(user){
   document.getElementById('app').style.display='block';
   document.getElementById('header-name').textContent=currentUser.name;
   if(sameUserReauth)return;
+  loadMapsApi(); // fire-and-forget — see its own comment
   const mainEl=document.getElementById('main');
   if(mainEl)mainEl.innerHTML='<div style="padding:40px;text-align:center;color:var(--text-tertiary,#888)">Loading…</div>';
   try{
