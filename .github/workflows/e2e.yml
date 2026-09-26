@@ -1,0 +1,106 @@
+name: E2E (Playwright, local stack)
+
+# Runs the Playwright suite in tests/e2e against the LOCAL Supabase stack —
+# never staging or production, see tests/e2e/playwright.config.mjs's own
+# comment for why. Reuses the same local-stack scaffold as rls-tests.yml
+# (pull the production SCHEMA only, never row data, into a fresh local
+# Postgres) plus the synthetic seed, then builds the app against that stack
+# using the exact same command Netlify runs for a real deploy — just with
+# DHF_ENV=local instead of a real deploy context — so what's tested is the
+# real build path, not a special-cased local-only one.
+#
+# Scope today: only the unauthenticated flows (see tests/e2e/README.md for
+# why — the authenticated "critical flows" need a test-login mechanism that
+# doesn't exist yet).
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
+        with:
+          version: latest
+
+      - name: Write the Supabase PAT to the path scripts/db-pull-schema.mjs expects
+        run: |
+          mkdir -p ~/.config/dhf-desk
+          echo "SUPABASE_ACCESS_TOKEN=${{ secrets.SUPABASE_ACCESS_TOKEN }}" > ~/.config/dhf-desk/env
+          chmod 600 ~/.config/dhf-desk/env
+
+      - name: Pull the current production schema (read-only)
+        run: node scripts/db-pull-schema.mjs
+
+      - name: Start the local Supabase stack and apply the pulled schema
+        run: node scripts/db-local-up.mjs
+
+      - name: Seed synthetic (non-production) test data
+        run: node scripts/db-seed-synthetic.mjs
+
+      - name: Build the app against the local stack
+        run: |
+          set -e
+          STATUS=$(supabase status -o json)
+          API_URL=$(node -e "console.log(JSON.parse(process.argv[1]).API_URL)" "$STATUS")
+          ANON_KEY=$(node -e "console.log(JSON.parse(process.argv[1]).ANON_KEY)" "$STATUS")
+          CMD=$(grep '^  command' netlify.toml | sed 's/^  command = "\(.*\)"$/\1/')
+          echo "build command: $CMD"
+          DHF_ENV=local \
+            DHF_SUPABASE_URL="$API_URL" \
+            DHF_SUPABASE_KEY="$ANON_KEY" \
+            DHF_GOOGLE_CLIENT_ID=placeholder-not-used-by-unauthenticated-tests \
+            sh -c "$CMD"
+
+      - name: Serve the built app
+        run: npx --yes serve dist -l 8080 &
+
+      - name: Wait for the app to be reachable
+        run: |
+          for attempt in $(seq 1 15); do
+            if curl -sf -o /dev/null http://127.0.0.1:8080/; then exit 0; fi
+            sleep 2
+          done
+          echo "App never came up on :8080"
+          exit 1
+
+      - name: Install Playwright
+        working-directory: tests/e2e
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: tests/e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the E2E suite
+        working-directory: tests/e2e
+        run: npm test
+
+      - name: Upload the HTML report on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report
+          path: tests/e2e/playwright-report/
+          retention-days: 14
+
+      - name: Stop the local stack
+        if: always()
+        run: supabase stop

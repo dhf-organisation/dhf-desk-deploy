@@ -1,0 +1,12 @@
+{
+  "name": "dhf-desk-e2e",
+  "private": true,
+  "description": "Playwright E2E suite for DHF Desk. Deliberately isolated here (not a repo-root package.json) so Netlify's build never auto-detects or npm-installs it — the app itself still has no build step or dependencies. See tests/e2e/README.md.",
+  "type": "module",
+  "devDependencies": {
+    "@playwright/test": "1.55.1"
+  },
+  "scripts": {
+    "test": "playwright test"
+  }
+}

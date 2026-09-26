@@ -13,3 +13,9 @@ supabase/.env
 
 # Personal Claude Code permission overrides — machine-local, never shared.
 .claude/settings.local.json
+
+# Playwright E2E output — see tests/e2e/README.md. node_modules/ above
+# already covers tests/e2e/node_modules/.
+tests/e2e/playwright-report/
+tests/e2e/test-results/
+tests/e2e/.auth/
